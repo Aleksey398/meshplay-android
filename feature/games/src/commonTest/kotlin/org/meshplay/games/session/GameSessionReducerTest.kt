@@ -68,7 +68,7 @@ class GameSessionReducerTest {
         assertEquals(1, session.seq)
         assertEquals(listOf("5"), session.moves)
 
-        // Duplicates and replays are ignored.
+        // Duplicates and replays are ignored (null session means "no change").
         val replayed =
             GameSessionReducer.reduce(
                 session,
@@ -77,7 +77,7 @@ class GameSessionReducerTest {
                 now = 3L,
             )
         assertFalse(replayed.changed)
-        assertEquals(session, replayed.session)
+        assertNull(replayed.session)
     }
 
     @Test

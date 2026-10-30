@@ -191,7 +191,9 @@ data class ChessPosition(
     private fun insufficientMaterial(): Boolean {
         val nonKings = board.filter { it != EMPTY && abs(it) != KING }
         if (nonKings.isEmpty()) return true
-        if (nonKings.size == 1 && abs(nonKings[0]) != PAWN) return true
+        // Only a single bishop or knight cannot force mate on their own; a pawn, rook or queen
+        // (or several pieces) keeps the game alive.
+        if (nonKings.size == 1 && (abs(nonKings[0]) == BISHOP || abs(nonKings[0]) == KNIGHT)) return true
         return false
     }
 

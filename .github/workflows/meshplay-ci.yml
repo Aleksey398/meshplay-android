@@ -39,6 +39,7 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             grep -E "^e: |error:|FAILURE:|What went wrong|Could not |Unresolved reference|> .*FAILED" unit-tests.log | head -60 | sed 's/^/::error::/' || true
+            grep -A4 "> .*FAILED" unit-tests.log | grep -E "Error|expected|actual|at org\.meshplay|Caused by" | head -40 | sed 's/^/::error::/' || true
           fi
           exit "$status"
 
@@ -49,6 +50,7 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             grep -E "^e: |error:|FAILURE:|What went wrong|Could not |Unresolved reference|> .*FAILED" assemble.log | head -60 | sed 's/^/::error::/' || true
+            grep -A4 "> .*FAILED" assemble.log | grep -E "Error|expected|actual|at org\.meshplay|Caused by" | head -40 | sed 's/^/::error::/' || true
           fi
           exit "$status"
 
