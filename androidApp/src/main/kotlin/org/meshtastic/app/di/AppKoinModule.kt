@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -52,6 +53,7 @@ import org.meshtastic.feature.discovery.di.FeatureDiscoveryModule
 import org.meshtastic.feature.docs.di.FeatureDocsModule
 import org.meshtastic.feature.firmware.di.FeatureFirmwareModule
 import org.meshtastic.feature.intro.di.FeatureIntroModule
+import org.meshplay.games.di.FeatureGamesModule
 import org.meshtastic.feature.map.di.FeatureMapModule
 import org.meshtastic.feature.messaging.di.FeatureMessagingModule
 import org.meshtastic.feature.node.di.FeatureNodeModule
@@ -85,6 +87,7 @@ import org.meshtastic.feature.wifiprovision.di.FeatureWifiProvisionModule
         CoreUiModule::class,
         FeatureNodeModule::class,
         FeatureMessagingModule::class,
+        FeatureGamesModule::class,
         FeatureConnectionsModule::class,
         FeatureMapModule::class,
         FeatureSettingsModule::class,

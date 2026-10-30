@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -95,6 +96,7 @@ include(
     ":core:datastore",
     ":core:di",
     ":core:domain",
+    ":core:game-protocol",
     ":core:konsist",
     ":core:model",
     ":core:navigation",
@@ -107,6 +109,7 @@ include(
     ":core:takserver",
     ":core:testing",
     ":core:ui",
+    ":feature:games",
     ":feature:intro",
     ":feature:messaging",
     ":feature:connections",

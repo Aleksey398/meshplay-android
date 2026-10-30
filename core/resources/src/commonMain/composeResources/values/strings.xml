@@ -1,3 +1,4 @@
+<!-- Modified by MeshPlay on 2026-10-30 -->
 <!--
   ~ Copyright (c) 2025 Meshtastic LLC
   ~
@@ -330,6 +331,10 @@
     <string name="conversations">Conversations</string>
     <string name="copy">Copy</string>
     <string name="copyright_notice">Meshtastic® Copyright Meshtastic LLC</string>
+    <!-- MESHPLAY FORK NOTICES -->
+    <string name="fork_about_title">About MeshPlay</string>
+    <string name="fork_disclaimer">MeshPlay is an independent fork of Meshtastic-Android. Meshtastic® is a registered trademark of Meshtastic LLC. This project is not affiliated with, endorsed by, or connected to the Meshtastic project. It works with Meshtastic-compatible nodes and firmware.</string>
+    <string name="fork_sources">MeshPlay sources</string>
     <string name="create_your_own_networks">Create Your Own Networks</string>
     <string name="critical_alert">Critical Alert!</string>
     <string name="critical_alerts">Critical Alerts</string>
@@ -836,6 +841,41 @@
     <string name="freq">Freq</string>
     <string name="gas_resistance">Gas Resistance</string>
     <string name="generate_qr_code">Generate QR Code</string>
+    <!-- GAMES -->
+    <string name="games_title">Games</string>
+    <string name="games_menu_item">Play a game</string>
+    <string name="games_sessions">Sessions</string>
+    <string name="games_no_sessions">No games in this chat yet</string>
+    <string name="games_new_challenge">New challenge</string>
+    <string name="games_chess">Chess</string>
+    <string name="games_checkers">Checkers</string>
+    <string name="games_tictactoe">Tic-tac-toe</string>
+    <string name="games_play_white">Play as White</string>
+    <string name="games_play_black">Play as Black</string>
+    <string name="games_play_x">Play as X</string>
+    <string name="games_accept">Accept</string>
+    <string name="games_decline">Decline</string>
+    <string name="games_invited_title">Opponent wants to play %1$s</string>
+    <string name="games_waiting_peer">Waiting for the opponent…</string>
+    <string name="games_invited_status">Invitation received</string>
+    <string name="games_resign">Resign</string>
+    <string name="games_offer_draw">Offer draw</string>
+    <string name="games_accept_draw">Accept draw</string>
+    <string name="games_peer_offered_draw">Opponent offers a draw</string>
+    <string name="games_result_white_wins">White wins</string>
+    <string name="games_result_black_wins">Black wins</string>
+    <string name="games_result_draw">Draw</string>
+    <string name="games_moves_label">Moves</string>
+    <string name="games_promotion_title">Promote pawn to</string>
+    <string name="games_your_turn">Your move</string>
+    <string name="games_peer_turn">Opponent to move</string>
+    <string name="games_peer_turn">Opponent to move</string>
+    <string name="games_you_are_white">You are White</string>
+    <string name="games_you_are_black">You are Black</string>
+    <string name="games_you_are_x">You are X</string>
+    <string name="games_you_are_o">You are O</string>
+    <string name="games_forget">Remove session</string>
+    <string name="games_in_progress">Game in progress</string>
     <!-- GEOFENCE -->
     <string name="geofence">Geofence</string>
     <string name="geofence_alerts_opt_in">Notify me of crossings</string>

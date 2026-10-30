@@ -1,5 +1,14 @@
 # Contributing to Meshtastic-Android
 
+> **MeshPlay fork note (Modified by MeshPlay on 2026-10-30).** This repository is the MeshPlay
+> fork: a GPL-3.0-or-later derivative of Meshtastic-Android with a game layer on top. When
+> contributing here: keep `LICENSE` and the upstream `Copyright (c) … Meshtastic LLC` headers
+> intact, mark files you change from upstream with a dated `// Modified by MeshPlay on <date>`
+> line, and do not strip upstream copyright notices. New code should carry the plain GPL header
+> used by the `feature/games` / `core/game-protocol` modules. The upstream Meshtastic CLA and
+> contribution flow apply to the upstream project, not to this fork. Trademark rules still apply:
+> “Meshtastic®” may be mentioned only descriptively — never in the app name, icon or listing.
+
 Thank you for your interest in contributing to Meshtastic-Android! We welcome contributions from everyone.
 
 ## How to Contribute

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Modified by MeshPlay on 2026-10-30 -->
 <!--
   ~ Copyright (c) 2025 Meshtastic LLC
   ~
@@ -16,7 +17,7 @@
   ~ along with this program.  If not, see <https://www.gnu.org/licenses/>.
   -->
 <resources>
-    <string name="app_name">Meshtastic</string>
-    <string name="app_description">Off-grid mesh networking for secure, long-range communications via LoRa radio.</string>
-    <string name="nfc_tag_emulation_service">Meshtastic contact and channel sharing</string>
+    <string name="app_name">MeshPlay</string>
+    <string name="app_description">Off-grid mesh messaging and turn-based games for LoRa networks.</string>
+    <string name="nfc_tag_emulation_service">MeshPlay contact and channel sharing</string>
 </resources>

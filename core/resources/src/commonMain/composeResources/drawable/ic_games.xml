@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <!-- Board lines -->
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M352,160h64v640h-64z"/>
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M544,160h64v640h-64z"/>
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M160,352h640v64h-640z"/>
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M160,544h640v64h-640z"/>
+  <!-- X in the top-left cell -->
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M205,227 L227,205 L307,285 L285,307 Z"/>
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M285,205 L307,227 L227,307 L205,285 Z"/>
+  <!-- O in the bottom-right cell -->
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:fillType="evenOdd"
+      android:pathData="M632,696a64,64 0 1 0 128,0a64,64 0 1 0 -128,0 M664,696a32,32 0 1 1 64,0a32,32 0 1 1 -64,0"/>
+</vector>

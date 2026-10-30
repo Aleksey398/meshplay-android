@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -215,6 +216,7 @@ dependencies {
     implementation(projects.core.takserver)
     implementation(projects.feature.intro)
     implementation(projects.feature.messaging)
+    implementation(projects.feature.games)
     implementation(projects.feature.connections)
     implementation(projects.feature.map)
     implementation(projects.feature.coverage)

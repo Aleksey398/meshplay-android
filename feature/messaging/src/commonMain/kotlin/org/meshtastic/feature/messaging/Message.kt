@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -144,6 +145,7 @@ private const val COUNTER_VISIBLE_WITHIN_BYTES = 20
  * @param navigateToQuickChatOptions Callback to navigate to the quick chat options screen.
  * @param navigateToFilterSettings Callback to navigate to the message filter settings screen.
  * @param onNavigateBack Callback to navigate back from this screen.
+ * @param navigateToGames Callback to open the MeshPlay games hub for this conversation.
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalFoundationApi::class)
@@ -156,6 +158,7 @@ fun MessageScreen(
     navigateToQuickChatOptions: () -> Unit,
     navigateToFilterSettings: () -> Unit,
     onNavigateBack: () -> Unit,
+    navigateToGames: () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboard.current
@@ -474,6 +477,7 @@ fun MessageScreen(
                     onToggleShowFiltered = viewModel::toggleShowFiltered,
                     onNavigateToFilterSettings = navigateToFilterSettings,
                     onSearchClick = viewModel::toggleSearch,
+                    onNavigateToGames = navigateToGames,
                 )
             }
         },

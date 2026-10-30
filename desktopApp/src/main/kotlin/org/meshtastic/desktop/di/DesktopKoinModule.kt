@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -37,6 +38,7 @@ import org.meshtastic.feature.messaging.di.FeatureMessagingModule
 import org.meshtastic.feature.node.di.FeatureNodeModule
 import org.meshtastic.feature.settings.di.FeatureSettingsModule
 import org.meshtastic.feature.wifiprovision.di.FeatureWifiProvisionModule
+import org.meshplay.games.di.FeatureGamesModule
 
 /**
  * Aggregate Koin module for the Desktop target — the single entry [DesktopKoinApp] points at.
@@ -63,6 +65,7 @@ import org.meshtastic.feature.wifiprovision.di.FeatureWifiProvisionModule
         CoreUiModule::class,
         FeatureNodeModule::class,
         FeatureMessagingModule::class,
+        FeatureGamesModule::class,
         FeatureConnectionsModule::class,
         FeatureMapModule::class,
         FeatureSettingsModule::class,

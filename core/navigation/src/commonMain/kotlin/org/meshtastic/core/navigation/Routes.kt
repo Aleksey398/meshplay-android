@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -50,6 +51,16 @@ sealed interface ContactsRoute : Route {
     @Serializable data class Share(val message: String) : ContactsRoute
 
     @Serializable data object QuickChat : ContactsRoute
+}
+
+/** MeshPlay game layer: per-contact challenge hub and the game table itself. */
+@Serializable
+sealed interface GamesRoute : Route {
+    /** Session list for [contactKey] plus the new-challenge picker. */
+    @Serializable data class Pick(val contactKey: String) : GamesRoute
+
+    /** One open game table. */
+    @Serializable data class Game(val contactKey: String, val sessionId: Int) : GamesRoute
 }
 
 @Serializable

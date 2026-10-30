@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -60,6 +61,7 @@ import org.meshtastic.feature.settings.navigation.rememberSettingsRadioConfigVie
 import org.meshtastic.feature.settings.navigation.settingsGraph
 import org.meshtastic.feature.settings.radio.channel.channelsGraph
 import org.meshtastic.feature.wifiprovision.navigation.wifiProvisionGraph
+import org.meshplay.games.navigation.gamesGraph
 
 @Composable
 fun MainScreen() {
@@ -115,6 +117,7 @@ fun MainScreen() {
                     docsEntries(backStack)
                     firmwareGraph(backStack)
                     wifiProvisionGraph(backStack)
+                    gamesGraph(backStack)
                 },
                 modifier = Modifier.fillMaxSize().recalculateWindowInsets().safeDrawingPadding(),
                 analytics = koinInject<PlatformAnalytics>(),

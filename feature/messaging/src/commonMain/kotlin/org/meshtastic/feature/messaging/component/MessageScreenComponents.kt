@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -89,6 +90,7 @@ import org.meshtastic.core.resources.filter_enable_for_contact
 import org.meshtastic.core.resources.filter_hide_count
 import org.meshtastic.core.resources.filter_settings
 import org.meshtastic.core.resources.filter_show_count
+import org.meshtastic.core.resources.games_menu_item
 import org.meshtastic.core.resources.jump_to_latest_from
 import org.meshtastic.core.resources.jump_to_latest_from_and_more
 import org.meshtastic.core.resources.navigate_back
@@ -118,6 +120,7 @@ import org.meshtastic.core.ui.icon.Copy
 import org.meshtastic.core.ui.icon.Delete
 import org.meshtastic.core.ui.icon.FilterList
 import org.meshtastic.core.ui.icon.FilterListOff
+import org.meshtastic.core.ui.icon.Games
 import org.meshtastic.core.ui.icon.KeyboardArrowDown
 import org.meshtastic.core.ui.icon.KeyboardArrowUp
 import org.meshtastic.core.ui.icon.MeshtasticIcons
@@ -402,6 +405,7 @@ fun MessageTopBar(
     onToggleShowFiltered: () -> Unit = {},
     onNavigateToFilterSettings: () -> Unit = {},
     onSearchClick: () -> Unit = {},
+    onNavigateToGames: () -> Unit = {},
 ) = TopAppBar(
     title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -441,6 +445,7 @@ fun MessageTopBar(
             showFiltered = showFiltered,
             onToggleShowFiltered = onToggleShowFiltered,
             onNavigateToFilterSettings = onNavigateToFilterSettings,
+            onNavigateToGames = onNavigateToGames,
         )
     },
 )
@@ -459,6 +464,7 @@ private fun MessageTopBarActions(
     showFiltered: Boolean,
     onToggleShowFiltered: () -> Unit,
     onNavigateToFilterSettings: () -> Unit,
+    onNavigateToGames: () -> Unit,
 ) {
     if (channelIndex == NodeAddress.PKC_CHANNEL_INDEX) {
         NodeKeyStatusIcon(hasPKC = true, mismatchKey = mismatchKey)
@@ -481,6 +487,7 @@ private fun MessageTopBarActions(
             showFiltered = showFiltered,
             onToggleShowFiltered = onToggleShowFiltered,
             onNavigateToFilterSettings = onNavigateToFilterSettings,
+            onNavigateToGames = onNavigateToGames,
         )
     }
 }
@@ -499,12 +506,14 @@ private fun OverFlowMenu(
     showFiltered: Boolean,
     onToggleShowFiltered: () -> Unit,
     onNavigateToFilterSettings: () -> Unit,
+    onNavigateToGames: () -> Unit,
 ) {
     if (expanded) {
         DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
             DropdownMenuGroup(shapes = MenuDefaults.groupShapes()) {
                 QuickChatToggleMenuItem(showQuickChat, onDismiss, onToggleQuickChat)
                 QuickChatOptionsMenuItem(onDismiss, onNavigateToQuickChatOptions)
+                GamesMenuItem(onDismiss, onNavigateToGames)
             }
             DropdownMenuGroup(shapes = MenuDefaults.groupShapes()) {
                 if (filteredCount > 0 && !filteringDisabled) {
@@ -517,6 +526,19 @@ private fun OverFlowMenu(
             }
         }
     }
+}
+
+@Composable
+private fun GamesMenuItem(onDismiss: () -> Unit, onNavigate: () -> Unit) {
+    val title = stringResource(Res.string.games_menu_item)
+    DropdownMenuItem(
+        text = { Text(title) },
+        onClick = {
+            onDismiss()
+            onNavigate()
+        },
+        leadingIcon = { Icon(imageVector = MeshtasticIcons.Games, contentDescription = title) },
+    )
 }
 
 @Composable

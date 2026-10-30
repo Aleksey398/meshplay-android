@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -59,6 +60,9 @@ import org.meshtastic.core.resources.app_version
 import org.meshtastic.core.resources.apps
 import org.meshtastic.core.resources.copyright_notice
 import org.meshtastic.core.resources.documentation
+import org.meshtastic.core.resources.fork_about_title
+import org.meshtastic.core.resources.fork_disclaimer
+import org.meshtastic.core.resources.fork_sources
 import org.meshtastic.core.resources.github_repository
 import org.meshtastic.core.resources.license
 import org.meshtastic.core.resources.license_notice
@@ -87,7 +91,9 @@ private val CAROUSEL_IMAGE_WIDTH = 110.dp
 private val CAROUSEL_IMAGE_HEIGHT = 130.dp
 
 private const val HARDWARE_URL = "https://meshtastic.org/#hardware"
-private const val GITHUB_REPO_URL = "https://github.com/meshtastic/Meshtastic-Android"
+
+// Modified by MeshPlay on 2026-10-30: fork repository instead of the upstream project.
+private const val GITHUB_REPO_URL = "https://github.com/Aleksey398/meshplay-android"
 private const val WEBSITE_URL = "https://meshtastic.org"
 private const val DOCS_URL = "https://meshtastic.org/docs/getting-started"
 private const val LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html"
@@ -141,6 +147,9 @@ fun AboutScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             WhatIsMeshtasticSection()
+            ForkNoticeSection(
+                onOpenSources = { uriHandler.openUri(GITHUB_REPO_URL) },
+            )
             AppsSection(
                 appVersionName = appVersionName,
                 onNavigateToAcknowledgements = onNavigateToAcknowledgements,
@@ -165,6 +174,26 @@ private fun WhatIsMeshtasticSection(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(16.dp),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+// Modified by MeshPlay on 2026-10-30: trademark disclosure required for the fork (GPL section 5(d)
+// keeps the upstream notices above; this adds the independent-project statement next to them).
+@Composable
+private fun ForkNoticeSection(onOpenSources: () -> Unit, modifier: Modifier = Modifier) {
+    ExpressiveSection(title = stringResource(Res.string.fork_about_title), modifier = modifier) {
+        Text(
+            text = stringResource(Res.string.fork_disclaimer),
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        ListItem(
+            text = stringResource(Res.string.fork_sources),
+            leadingIcon = MeshtasticIcons.Code,
+            trailingIcon = MeshtasticIcons.ChevronRight,
+            onClick = onOpenSources,
         )
     }
 }

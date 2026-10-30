@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-30
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import org.koin.compose.viewmodel.koinViewModel
 import org.meshtastic.core.common.util.CommonUri
 import org.meshtastic.core.navigation.ContactsRoute
+import org.meshtastic.core.navigation.GamesRoute
 import org.meshtastic.core.navigation.NodesRoute
 import org.meshtastic.core.navigation.SettingsRoute
 import org.meshtastic.core.navigation.replaceLast
@@ -75,6 +77,7 @@ fun EntryProviderScope<NavKey>.contactsGraph(
             dropUnlessResumed { backStack.add(org.meshtastic.core.navigation.ContactsRoute.QuickChat) },
             navigateToFilterSettings = dropUnlessResumed { backStack.add(SettingsRoute.FilterSettings) },
             onNavigateBack = dropUnlessResumed { backStack.removeLastOrNull() },
+            navigateToGames = dropUnlessResumed { backStack.add(GamesRoute.Pick(contactKey)) },
         )
     }
 
