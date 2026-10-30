@@ -1,0 +1,50 @@
+---
+title: ヘルプとアプリ内ドキュメント
+nav_order: 21
+last_updated: 2026-10-21
+description: このドキュメントをアプリ内で閲覧・検索し、オンデバイスの AI アシスタント Chirpy に Meshtastic について質問できます。
+aliases:
+  - help
+  - docs-browser
+  - chirpy
+  - assistant
+---
+
+# ヘルプとアプリ内ドキュメント
+
+このユーザードキュメントは**アプリ内**にも同梱されており、Meshtastic を離れることなくオフラインで読めます。「**設定 → ヘルプとドキュメント**」から開きます。
+
+## 閲覧する
+
+ドキュメントブラウザーには、ユーザーガイドのすべてのページが一覧表示されます。 Tap a page to read it; images and cross-links work as they do here.
+
+![アプリ内ドキュメントブラウザーの目次](../../assets/screenshots/docs-browser_toc.png)
+
+### 検索
+
+Tap the search field at the top of the docs browser to open a full-screen search view. Type to filter pages by title and keywords — results update as you type, under the same field. The back arrow, or the keyboard's search action, closes the view. The field hides while you scroll down the page list and comes back when you scroll up.
+
+![アプリ内ドキュメントの検索](../../assets/screenshots/docs-browser_search.png)
+
+ブラウザーで開いたページ：
+
+![アプリ内で表示されたドキュメントページ](../../assets/screenshots/docs-browser_page.png)
+
+### Pages in your language
+
+With the app set to a language other than English, a page that has a community translation opens in that language, labeled **Community translated** under its title. On the Google-flavor Android build, a page with no community translation opens in English and is then machine-translated on the phone, labeled **Auto-translated**. F-Droid and desktop builds show such a page in English.
+
+## Chirpy：AI アシスタント
+
+**Chirpy** は、この同梱ドキュメントを情報源として、Meshtastic に関する平易な質問に答えます。ドキュメントブラウザーで Chirpy ボタンをタップして質問を入力すると、回答と、関連ページへのリンクが返ってきます。
+
+![ページリンク付きで質問に答える Chirpy AI アシスタント](../../assets/screenshots/docs-browser_chirpy.png)
+
+Chirpy is Google-flavor Android only. On F-Droid and desktop builds the assistant button does not appear at all — the same is true on a phone whose hardware cannot run the on-device model. Browsing and the docs browser's own search work normally on every platform.
+
+> 🔒 **Privacy:** On supported phones running the Google-flavor build, Chirpy runs **on-device** using Gemini Nano — your questions never leave your phone. 初回使用時に、小さなモデルがダウンロードされます。
+
+## 関連トピック
+
+- [アプリを翻訳する](translate)：これらのページが他の言語にどう翻訳されるか
+- [アプリ機能](app-functions)：Chirpy とは別の、システム AI 連携

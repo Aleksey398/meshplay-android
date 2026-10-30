@@ -1,0 +1,50 @@
+---
+title: Help & In-App Docs
+nav_order: 21
+last_updated: 2026-10-21
+description: Sirvi seda dokumentatsiooni rakenduses, otsi seda ja küsi Chirpylt – seadmesisesele TI assistendile – küsimusi Meshtasticu kohta.
+aliases:
+  - abi
+  - docs-browser
+  - chirpy
+  - assistent
+---
+
+# Help & In-App Docs
+
+Sama kasutajadokumentatsioon on **rakenduse sees**, nii et saate seda lugeda võrguühenduseta ilma Meshtasticust lahkumata. Ava see menüüst **Seaded → Abi ja dokumentatsioon**.
+
+## Browsing
+
+Dokumendibrauser loetleb kõik kasutusjuhendi lehed. Tap a page to read it; images and cross-links work as they do here.
+
+![Rakendusesisese dokumentatsiooni brauseri sisukord](../../assets/screenshots/docs-browser_toc.png)
+
+### Otsi
+
+Tap the search field at the top of the docs browser to open a full-screen search view. Type to filter pages by title and keywords — results update as you type, under the same field. The back arrow, or the keyboard's search action, closes the view. The field hides while you scroll down the page list and comes back when you scroll up.
+
+![Rakendusesisese dokumentatsiooni otsimine](../../assets/screenshots/docs-browser_search.png)
+
+A page open in the browser:
+
+![Rakenduses kuvatav dokumentatsioonileht(../../assets/screenshots/docs-browser_page.png)
+
+### Pages in your language
+
+With the app set to a language other than English, a page that has a community translation opens in that language, labeled **Community translated** under its title. On the Google-flavor Android build, a page with no community translation opens in English and is then machine-translated on the phone, labeled **Auto-translated**. F-Droid and desktop builds show such a page in English.
+
+## Chirpy — TI assistent
+
+**Chirpy** vastab Meshtasticu kohta käivatele lihtsatele küsimustele, kasutades allikana seda komplekti kuuluvat dokumentatsiooni. Klõpsai dokumendibrauseris nuppu Chirpy, sisesta küsimus ja see vastab vastuse ja linkidega asjakohastele lehtedele.
+
+![Chirpy TI assistent vastab küsimusele lehelinkide abil](../../assets/screenshots/docs-browser_chirpy.png)
+
+Chirpy is Google-flavor Android only. On F-Droid and desktop builds the assistant button does not appear at all — the same is true on a phone whose hardware cannot run the on-device model. Browsing and the docs browser's own search work normally on every platform.
+
+> 🔒 **Privacy:** On supported phones running the Google-flavor build, Chirpy runs **on-device** using Gemini Nano — your questions never leave your phone. Väike mudel laetakse alla esmakordsel kasutamisel.
+
+## Seotud teemad
+
+- [Tõlgi rakendus] (translate) — kuidas need lehed teistesse keeltesse lokaliseeritakse
+- [Rakenduse funktsioonid](app-functions) — eraldi süsteemi ja tehisintellekti integratsioon (erineb Chirpyst)

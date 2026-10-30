@@ -1,0 +1,151 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.audio
+import org.meshtastic.core.resources.audio_config
+import org.meshtastic.core.resources.schema_audio_bitrate
+import org.meshtastic.core.resources.schema_audio_bitrate_description
+import org.meshtastic.core.resources.schema_audio_codec2_enabled
+import org.meshtastic.core.resources.schema_audio_codec2_enabled_description
+import org.meshtastic.core.resources.schema_audio_i2s_din
+import org.meshtastic.core.resources.schema_audio_i2s_sck
+import org.meshtastic.core.resources.schema_audio_i2s_sd
+import org.meshtastic.core.resources.schema_audio_i2s_ws
+import org.meshtastic.core.resources.schema_audio_ptt_pin
+import org.meshtastic.core.resources.schema_audio_ptt_pin_description
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.proto.ModuleConfig
+
+@Composable
+fun AudioConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val audioConfig = state.moduleConfig.audio ?: ModuleConfig.AudioConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = audioConfig)
+    val focusManager = LocalFocusManager.current
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.audio),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = ModuleConfig.Builder().also { wb -> wb.audio = it }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ModuleRoute.AUDIO.route)) {
+            TitledCard(title = stringResource(Res.string.audio_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_audio_codec2_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_audio_codec2_enabled),
+                    summary = stringResource(Res.string.schema_audio_codec2_enabled_description),
+                    checked = formState.value.codec2_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.codec2_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_audio_ptt_pin),
+                    modifier = Modifier.settingsField(Res.string.schema_audio_ptt_pin),
+                    summary = stringResource(Res.string.schema_audio_ptt_pin_description),
+                    value = formState.value.ptt_pin,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.ptt_pin = it }.build()
+                    },
+                )
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_audio_bitrate),
+                    modifier = Modifier.settingsField(Res.string.schema_audio_bitrate),
+                    summary = stringResource(Res.string.schema_audio_bitrate_description),
+                    enabled = state.connected,
+                    selectedItem = formState.value.bitrate,
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.bitrate = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_audio_i2s_ws),
+                    modifier = Modifier.settingsField(Res.string.schema_audio_i2s_ws),
+                    value = formState.value.i2s_ws,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.i2s_ws = it }.build()
+                    },
+                )
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_audio_i2s_sd),
+                    modifier = Modifier.settingsField(Res.string.schema_audio_i2s_sd),
+                    value = formState.value.i2s_sd,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.i2s_sd = it }.build()
+                    },
+                )
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_audio_i2s_din),
+                    modifier = Modifier.settingsField(Res.string.schema_audio_i2s_din),
+                    value = formState.value.i2s_din,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.i2s_din = it }.build()
+                    },
+                )
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_audio_i2s_sck),
+                    modifier = Modifier.settingsField(Res.string.schema_audio_i2s_sck),
+                    value = formState.value.i2s_sck,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.i2s_sck = it }.build()
+                    },
+                )
+            }
+        }
+    }
+}

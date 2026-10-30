@@ -1,0 +1,150 @@
+name: Android CI (Merge Queue)
+
+on:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+# Note: github.ref is unique per merge-group entry (gh-readonly-queue/main/pr-N-<sha>),
+# so this group never dedupes across re-queues of the same PR. check-changes cancels
+# those runs itself.
+concurrency:
+  group: build-mq-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Docs-only queue entries (changelog updates, markdown fixes, store listings, Obtainium
+  # configs) cannot affect the build; skip the heavy pipeline for them. Anything outside
+  # docs/, fastlane/, obtainium/ and *.md runs full CI. Mirrors the paths-ignore list in
+  # main-check.yml.
+  # No checkout, no toolchain: gh api only.
+  check-changes:
+    name: Check Changes
+    if: github.repository == 'meshtastic/Meshtastic-Android'
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      # A re-queued PR gets a new merge group, but GitHub leaves the destroyed group's runs
+      # queued or running, starving the runner pool. Only the newest group per PR is valid.
+      # Best effort: a failed cancel must not fail the required check.
+      - name: Cancel older merge-queue runs for the same PR
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # github.ref_name: gh-readonly-queue/main/pr-<num>-<base-sha>
+          PR_PREFIX=$(echo "${{ github.ref_name }}" | grep -oE 'gh-readonly-queue/.+/pr-[0-9]+-')
+          if [ -z "$PR_PREFIX" ]; then
+            echo "Could not parse PR from ref '${{ github.ref_name }}'; skipping."
+            exit 0
+          fi
+          for status in queued in_progress; do
+            gh api "repos/${{ github.repository }}/actions/runs?event=merge_group&status=${status}&per_page=100" \
+              --jq ".workflow_runs[] | select(.head_branch | startswith(\"$PR_PREFIX\")) | select(.id < ${{ github.run_id }}) | .id"
+          done | sort -u | while read -r run_id; do
+            echo "Cancelling superseded run $run_id"
+            # A graceful cancel is delivered to the runner, so a run still waiting for one
+            # never receives it. force-cancel ends the run at the API regardless.
+            gh run cancel "$run_id" --repo "${{ github.repository }}" || true
+            gh api -X POST "repos/${{ github.repository }}/actions/runs/${run_id}/force-cancel" || true
+          done
+
+      - name: Diff merge group against its base
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          changed=$(gh api "repos/${{ github.repository }}/compare/${{ github.event.merge_group.base_sha }}...${{ github.event.merge_group.head_sha }}" \
+            --jq '.files[].filename')
+          count=$(grep -c . <<<"$changed" || true)
+          echo "Changed files ($count):"
+          echo "$changed"
+          # The compare API lists at most 300 files, so a list that long may be truncated.
+          if [ "$count" -ge 300 ] || echo "$changed" | grep -qvE '^docs/|^fastlane/|^obtainium/|\.md$|^$'; then
+            echo "android=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "android=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  android-check:
+    needs: check-changes
+    if: github.repository == 'meshtastic/Meshtastic-Android' && needs.check-changes.outputs.android == 'true'
+    uses: ./.github/workflows/reusable-check.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      run_lint: true
+      run_unit_tests: true
+      # Coverage is produced by main-check on the identical merge commit right
+      # after the queue merges it — keeping Kover instrumentation and report
+      # generation out of the queue's critical-path test shards.
+      run_coverage: false
+      # The PR already assembled these APKs and main-check rebuilds them (with
+      # -SNAPSHOT naming) for the snapshot release; a merge-combination
+      # packaging break would surface there minutes later. Skipping saves a
+      # runner slot per queue entry.
+      run_android_build: false
+      upload_artifacts: false
+    secrets: inherit
+
+  # Gate job: no checkout, no toolchain, reads `needs` results and posts license/cla. It is the
+  # required check, so it runs on a hosted Ubuntu label that shares the org's pool with the build
+  # jobs, not on ubuntu-slim's separate pool: an aggregator queued behind slim blocks a finished build.
+  check-workflow-status:
+    name: Check Workflow Status
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+      statuses: write
+    needs:
+      - check-changes
+      - android-check
+    if: always()
+    steps:
+      - name: Check Workflow Status
+        run: |
+          if [[ "${{ needs.check-changes.result }}" != "success" ]]; then
+            echo "::error::Change detection failed"
+            exit 1
+          fi
+          if [[ "${{ needs.android-check.result }}" == "failure" || "${{ needs.android-check.result }}" == "cancelled" ]]; then
+            echo "::error::Android Check failed"
+            exit 1
+          fi
+          echo "All jobs passed successfully"
+
+      # license/cla is required on the group commit too, but cla-assistant.io only checks PRs and
+      # its placeholder for the group never arrives when its webhook drops, stalling the queue.
+      - name: Post license/cla for the merge group
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          if [[ ! "$REF_NAME" =~ /pr-([0-9]+)- ]]; then
+            echo "::error::Could not parse PR from ref '$REF_NAME'"
+            exit 1
+          fi
+          pr="${BASH_REMATCH[1]}"
+          pr_sha=$(gh api "repos/$REPO/pulls/$pr" --jq '.head.sha')
+          cla=$(gh api "repos/$REPO/commits/$pr_sha/status" \
+            --jq '[.statuses[] | select(.context == "license/cla")][0].state // "missing"')
+          if [[ "$cla" != "success" ]]; then
+            echo "::error::license/cla is $cla on PR #$pr head $pr_sha"
+            exit 1
+          fi
+          gh api -X POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state=success -f context=license/cla \
+            -f "target_url=https://cla-assistant.io/$REPO" \
+            -f "description=CLA signed on PR #$pr. CLA checks only happen on pull requests." \
+            --jq '"posted \(.context) \(.state) on \(.url)"'

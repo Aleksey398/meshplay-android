@@ -1,0 +1,284 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.data.datasource
+
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
+import org.meshtastic.core.database.entity.Packet
+import org.meshtastic.core.di.CoroutineDispatchers
+import org.meshtastic.core.model.ContactKey
+import org.meshtastic.core.model.DataPacket
+import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.testing.FakeDatabaseProvider
+import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
+import org.meshtastic.proto.PortNum
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class SwitchingChannelSetDataSourceTest {
+    private val testDispatcher = UnconfinedTestDispatcher()
+    private val dispatchers = CoroutineDispatchers(main = testDispatcher, io = testDispatcher, default = testDispatcher)
+    private val dbProvider = FakeDatabaseProvider()
+    private val dataSource = SwitchingChannelSetDataSource(dbProvider, dispatchers)
+
+    @AfterTest fun tearDown() = dbProvider.close()
+
+    private fun secondary(index: Int, name: String) = Channel.Builder()
+        .also { wb ->
+            wb.index = index
+            wb.settings = ChannelSettings.Builder().also { wb -> wb.name = name }.build()
+            wb.role = Channel.Role.SECONDARY
+        }
+        .build()
+
+    @Test
+    fun `updateChannelSettings places channel at its index`() = runTest(testDispatcher) {
+        dataSource.updateChannelSettings(secondary(0, "primary"))
+        dataSource.updateChannelSettings(secondary(1, "second"))
+
+        val names = dataSource.channelSetFlow.first().settings.map { it.name }
+        assertEquals(listOf("primary", "second"), names)
+    }
+
+    @Test
+    fun `updateChannelSettings fills gaps with blank channels to preserve indices`() = runTest(testDispatcher) {
+        // Arrive out of order / with a gap: index 2 before 0/1 exist.
+        dataSource.updateChannelSettings(secondary(2, "third"))
+
+        val settings = dataSource.channelSetFlow.first().settings
+        assertEquals(3, settings.size)
+        assertEquals("", settings[0].name)
+        assertEquals("", settings[1].name)
+        assertEquals("third", settings[2].name)
+    }
+
+    @Test
+    fun `disabled channels are ignored`() = runTest(testDispatcher) {
+        dataSource.updateChannelSettings(
+            Channel.Builder()
+                .also { wb ->
+                    wb.index = 0
+                    wb.role = Channel.Role.DISABLED
+                }
+                .build(),
+        )
+        assertTrue(dataSource.channelSetFlow.first().settings.isEmpty())
+    }
+
+    @Test
+    fun `replaceAllSettings replaces the whole list`() = runTest(testDispatcher) {
+        dataSource.updateChannelSettings(secondary(0, "old"))
+        val originalLora = Config.LoRaConfig.Builder().also { wb -> wb.channel_num = 4 }.build()
+        dataSource.setLoraConfig(originalLora)
+        dataSource.replaceAllSettings(
+            listOf(
+                ChannelSettings.Builder().also { wb -> wb.name = "a" }.build(),
+                ChannelSettings.Builder().also { wb -> wb.name = "b" }.build(),
+            ),
+        )
+
+        val set = dataSource.channelSetFlow.first()
+        assertEquals(listOf("a", "b"), set.settings.map { it.name })
+        assertEquals(originalLora, set.lora_config)
+    }
+
+    @Test
+    fun `updateChannelSet atomically replaces settings and lora`() = runTest(testDispatcher) {
+        val settings = listOf(ChannelSettings.Builder().also { wb -> wb.name = "new" }.build())
+        val lora = Config.LoRaConfig.Builder().also { wb -> wb.channel_num = 7 }.build()
+
+        dataSource.updateChannelSet(settingsList = settings, loraConfig = lora)
+
+        assertEquals(
+            ChannelSet.Builder()
+                .also { wb ->
+                    wb.settings = settings
+                    wb.lora_config = lora
+                }
+                .build(),
+            dataSource.channelSetFlow.first(),
+        )
+    }
+
+    @Test
+    fun `setLoraConfig preserves existing channel settings`() = runTest(testDispatcher) {
+        dataSource.updateChannelSettings(secondary(0, "keep"))
+        dataSource.setLoraConfig(Config.LoRaConfig.Builder().also { wb -> wb.channel_num = 7 }.build())
+
+        val set = dataSource.channelSetFlow.first()
+        assertEquals("keep", set.settings.single().name)
+        assertEquals(7, set.lora_config?.channel_num)
+    }
+
+    @Test
+    fun `clearChannelSet empties the channel set`() = runTest(testDispatcher) {
+        dataSource.updateChannelSettings(secondary(0, "gone"))
+        dataSource.clearChannelSet()
+        assertTrue(dataSource.channelSetFlow.first().settings.isEmpty())
+    }
+
+    /**
+     * Regression for #4623: channels are now stored per-device. Switching to a different device's database must NOT
+     * surface the previous device's channels — the old global DataStore was the source of the cross-device duplicate
+     * channel rows.
+     */
+    @Test
+    fun `switching device does not leak channels across databases`() = runTest(testDispatcher) {
+        dataSource.updateChannelSettings(secondary(0, "deviceA-primary"))
+        assertEquals("deviceA-primary", dataSource.channelSetFlow.first().settings.single().name)
+
+        dbProvider.switchToNewDatabase()
+
+        assertTrue(
+            dataSource.channelSetFlow.first().settings.isEmpty(),
+            "A freshly selected device must start with no channels, not device A's",
+        )
+    }
+
+    /**
+     * The first reconcile has no baseline to diff against, so it captures one and moves nothing. Without this an
+     * upgrade would try to reconcile every stored conversation against a set it had never seen.
+     */
+    @Test
+    fun `the first reconcile only captures a baseline`() = runTest(testDispatcher) {
+        dataSource.updateChannelSettings(secondary(0, "primary"))
+        insertBroadcastPacket(channel = 0)
+
+        dataSource.reconcileConversations()
+
+        assertEquals(1, packetsOn(ContactKey.broadcast(0).value), "nothing to compare against, so nothing moves")
+        assertEquals(
+            "primary",
+            currentBaseline()?.settings?.single()?.name,
+            "the current set becomes the baseline for the next change",
+        )
+    }
+
+    /**
+     * The handshake streams channels one slot at a time, so reconciling on each of those writes would see a channel
+     * momentarily missing and retire a conversation that never went anywhere.
+     */
+    @Test
+    fun `per-slot writes do not reconcile`() = runTest(testDispatcher) {
+        dataSource.updateChannelSet(
+            listOf(ChannelSettings.Builder().also { wb -> wb.name = "A" }.build()),
+            Config.LoRaConfig.Builder().also { wb -> wb.use_preset = true }.build(),
+        )
+        insertBroadcastPacket(channel = 0)
+
+        dataSource.updateChannelSettings(secondary(0, "B"))
+
+        assertEquals(1, packetsOn(ContactKey.broadcast(0).value), "a mid-handshake slot write must not re-key")
+    }
+
+    /** A whole-set write is the app's own change, so it is safe — and necessary — to re-key immediately. */
+    @Test
+    fun `a whole-set write reconciles immediately`() = runTest(testDispatcher) {
+        val lora = Config.LoRaConfig.Builder().also { wb -> wb.use_preset = true }.build()
+        dataSource.updateChannelSet(listOf(ChannelSettings.Builder().also { wb -> wb.name = "A" }.build()), lora)
+        insertBroadcastPacket(channel = 0)
+
+        dataSource.updateChannelSet(listOf(ChannelSettings.Builder().also { wb -> wb.name = "B" }.build()), lora)
+
+        assertEquals(0, packetsOn(ContactKey.broadcast(0).value), "the slot has a new occupant")
+        assertEquals(1, dbProvider.currentDb.value.packetDao().getRetiredPacketContactKeys().size)
+    }
+
+    /**
+     * Replays the handshake's real order: the cached channel set is dropped, then the radio's LoRa config arrives as
+     * its own write, and only after that do the channels stream in slot by slot.
+     *
+     * The LoRa write must not reconcile. It lands while the settings list is still empty, so reconciling there would
+     * see every channel as deleted and archive every conversation on the device — on every single reconnect.
+     */
+    @Test
+    fun `the handshake lora write does not archive conversations`() = runTest(testDispatcher) {
+        val lora = Config.LoRaConfig.Builder().also { wb -> wb.use_preset = true }.build()
+        dataSource.updateChannelSet(listOf(ChannelSettings.Builder().also { wb -> wb.name = "A" }.build()), lora)
+        insertBroadcastPacket(channel = 0)
+
+        dataSource.clearChannelSet()
+        dataSource.setLoraConfig(lora)
+
+        assertEquals(1, packetsOn(ContactKey.broadcast(0).value), "a mid-handshake lora write must not re-key")
+        assertEquals(
+            0,
+            dbProvider.currentDb.value.packetDao().getRetiredPacketContactKeys().size,
+            "nothing may be archived while the channel list is still empty",
+        )
+    }
+
+    /** The messages did not move because the handshake dropped the cached channel set, so the baseline must survive. */
+    @Test
+    fun `clearing the channel set keeps the reconciliation baseline`() = runTest(testDispatcher) {
+        dataSource.updateChannelSet(
+            listOf(ChannelSettings.Builder().also { wb -> wb.name = "A" }.build()),
+            Config.LoRaConfig.Builder().also { wb -> wb.use_preset = true }.build(),
+        )
+
+        dataSource.clearChannelSet()
+
+        assertTrue(dataSource.channelSetFlow.first().settings.isEmpty())
+        assertEquals("A", currentBaseline()?.settings?.single()?.name)
+    }
+
+    private suspend fun currentBaseline(): ChannelSet? =
+        dbProvider.currentDb.value.channelSetDao().get()?.lastReconciledChannelSet
+
+    private suspend fun packetsOn(contactKey: String): Int =
+        dbProvider.currentDb.value.packetDao().getPacketsForContact(contactKey).size
+
+    private suspend fun insertBroadcastPacket(channel: Int) {
+        dbProvider.currentDb.value
+            .packetDao()
+            .insert(
+                Packet(
+                    uuid = 0L,
+                    myNodeNum = 1,
+                    port_num = PortNum.TEXT_MESSAGE_APP.value,
+                    contact_key = ContactKey.broadcast(channel).value,
+                    received_time = 1L,
+                    read = false,
+                    data = DataPacket(to = NodeAddress.ID_BROADCAST, channel = channel, text = "hi"),
+                ),
+            )
+    }
+
+    /** Handshake fires overlapping updateChannelSettings as it streams channels; the mutex must not drop any. */
+    @Test
+    fun `concurrent updateChannelSettings does not lose updates`() = runTest(testDispatcher) {
+        val n = 8
+        coroutineScope {
+            (0 until n).map { i -> async { dataSource.updateChannelSettings(secondary(i, "ch$i")) } }.awaitAll()
+        }
+
+        val settings = dataSource.channelSetFlow.first().settings
+        assertEquals(n, settings.size)
+        assertEquals((0 until n).map { "ch$it" }, settings.map { it.name })
+    }
+}

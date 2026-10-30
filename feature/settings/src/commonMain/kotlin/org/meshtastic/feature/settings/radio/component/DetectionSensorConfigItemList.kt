@@ -1,0 +1,198 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.detection_sensor
+import org.meshtastic.core.resources.detection_sensor_config
+import org.meshtastic.core.resources.schema_detectionsensor_detection_trigger_type
+import org.meshtastic.core.resources.schema_detectionsensor_detection_trigger_type_description
+import org.meshtastic.core.resources.schema_detectionsensor_enabled
+import org.meshtastic.core.resources.schema_detectionsensor_enabled_description
+import org.meshtastic.core.resources.schema_detectionsensor_minimum_broadcast_secs
+import org.meshtastic.core.resources.schema_detectionsensor_minimum_broadcast_secs_description
+import org.meshtastic.core.resources.schema_detectionsensor_monitor_pin
+import org.meshtastic.core.resources.schema_detectionsensor_monitor_pin_description
+import org.meshtastic.core.resources.schema_detectionsensor_name
+import org.meshtastic.core.resources.schema_detectionsensor_name_description
+import org.meshtastic.core.resources.schema_detectionsensor_send_bell
+import org.meshtastic.core.resources.schema_detectionsensor_send_bell_description
+import org.meshtastic.core.resources.schema_detectionsensor_state_broadcast_secs
+import org.meshtastic.core.resources.schema_detectionsensor_state_broadcast_secs_description
+import org.meshtastic.core.resources.schema_detectionsensor_use_pullup
+import org.meshtastic.core.resources.schema_detectionsensor_use_pullup_description
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.IntervalConfiguration
+import org.meshtastic.feature.settings.util.gpioPins
+import org.meshtastic.feature.settings.util.toDisplayString
+import org.meshtastic.proto.ModuleConfig
+
+@Composable
+fun DetectionSensorConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val detectionSensorConfig =
+        state.moduleConfig.detection_sensor ?: ModuleConfig.DetectionSensorConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = detectionSensorConfig)
+    val focusManager = LocalFocusManager.current
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.detection_sensor),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = ModuleConfig.Builder().also { wb -> wb.detection_sensor = it }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ModuleRoute.DETECTION_SENSOR.route)) {
+            TitledCard(title = stringResource(Res.string.detection_sensor_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_enabled),
+                    summary = stringResource(Res.string.schema_detectionsensor_enabled_description),
+                    checked = formState.value.enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                val minimumBroadcastIntervals = remember {
+                    IntervalConfiguration.DETECTION_SENSOR_MINIMUM.allowedIntervals
+                }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_minimum_broadcast_secs),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_minimum_broadcast_secs),
+                    summary = stringResource(Res.string.schema_detectionsensor_minimum_broadcast_secs_description),
+                    selectedItem = formState.value.minimum_broadcast_secs.toLong(),
+                    enabled = state.connected,
+                    items = minimumBroadcastIntervals.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.minimum_broadcast_secs = it.toInt() }.build()
+                    },
+                )
+
+                val stateBroadcastIntervals = remember { IntervalConfiguration.DETECTION_SENSOR_STATE.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_state_broadcast_secs),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_state_broadcast_secs),
+                    summary = stringResource(Res.string.schema_detectionsensor_state_broadcast_secs_description),
+                    selectedItem = formState.value.state_broadcast_secs.toLong(),
+                    enabled = state.connected,
+                    items = stateBroadcastIntervals.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.state_broadcast_secs = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_send_bell),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_send_bell),
+                    summary = stringResource(Res.string.schema_detectionsensor_send_bell_description),
+                    checked = formState.value.send_bell,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.send_bell = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_name),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_name),
+                    summary = stringResource(Res.string.schema_detectionsensor_name_description),
+                    value = formState.value.name,
+                    maxSize = 19, // name max_size:20
+                    enabled = state.connected,
+                    isError = false,
+                    keyboardOptions =
+                    KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.name = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                val pins = remember { gpioPins }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_monitor_pin),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_monitor_pin),
+                    summary = stringResource(Res.string.schema_detectionsensor_monitor_pin_description),
+                    items = pins,
+                    selectedItem = formState.value.monitor_pin,
+                    enabled = state.connected,
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.monitor_pin = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_detection_trigger_type),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_detection_trigger_type),
+                    summary = stringResource(Res.string.schema_detectionsensor_detection_trigger_type_description),
+                    enabled = state.connected,
+                    selectedItem = formState.value.detection_trigger_type,
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.detection_trigger_type = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_detectionsensor_use_pullup),
+                    modifier = Modifier.settingsField(Res.string.schema_detectionsensor_use_pullup),
+                    summary = stringResource(Res.string.schema_detectionsensor_use_pullup_description),
+                    checked = formState.value.use_pullup,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.use_pullup = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+            }
+        }
+    }
+}

@@ -1,0 +1,143 @@
+name: Verify Flatpak Offline Build
+
+on:
+  # Changing the generator or the manifest is the one case worth gating pre-merge:
+  # break it and every later run is red, with nothing else covering it.
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/verify-flatpak/**'
+      - '.github/workflows/verify-flatpak.yml'
+  # Post-merge only for what the check itself depends on. The offline build vendors the
+  # wrapper's Gradle distribution, so a wrapper bump is checked on merge.
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/verify-flatpak/**'
+      - '.github/workflows/verify-flatpak.yml'
+      - 'gradle/wrapper/**'
+  # The dependency surface the manifest captures (desktopApp/**, the version catalog, the
+  # root build scripts) is verified nightly, as is drift no path filter can see: a
+  # Flathub runtime bump, or an upstream artifact that moved or vanished.
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keyed on the event as well: a nightly and a push to main share github.ref, and
+  # without it cancel-in-progress lets one kill the other.
+  group: flatpak-verify-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # One job per arch: splitting generation from the build cost a second runner-queue wait
+  # (8-14 min measured, against ~9 min of generation) — the fan-in serialization
+  # reusable-check.yml documents avoiding. Each leg now captures sources on its own arch.
+  verify-flatpak:
+    name: Verify Flatpak Offline Build (${{ matrix.arch }})
+    # Matches the other scheduled workflows: without it every fork runs the nightly.
+    if: github.repository == 'meshtastic/Meshtastic-Android'
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: 25.0.5+8.0.LTS
+          token: ${{ github.token }}
+
+      # JBR resolves its version list via the GitHub API — unauthenticated requests
+      # rate-limit on the shared runner IPs, so the token is required, not optional.
+      # Fatal: foojay lists no JBR 25, so the build cannot configure without it.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: jetbrains
+          java-version: 25
+          set-default: false
+          token: ${{ github.token }}
+
+      # The build below uses its own Gradle user home, so a cache here is never read.
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+        with:
+          develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+          cache-disabled: true
+
+      # Isolated Gradle user home (rationale in release.yml): capture only sees cache
+      # MISSES, so caching this directory would empty the manifest, not speed it up.
+      - name: Generate flatpak-sources.json
+        run: |
+          ./gradlew --no-build-cache \
+            -Dgradle.user.home="$RUNNER_TEMP/flatpak-gradle-home" \
+            :desktopApp:packageUberJarForCurrentOS :captureFlatpakSources
+          cp build/flatpak-sources.json flatpak-sources.json
+          echo "### Flatpak Sources Summary (${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URLs captured: $(jq length flatpak-sources.json)" >> "$GITHUB_STEP_SUMMARY"
+
+      # The sandbox build below starts its own Gradle and Kotlin daemons. The pair
+      # this step left running holds the other half of the runner's memory, and the
+      # VM stalls and is shut down mid-compile. Stop them; the home itself can stay.
+      - name: Stop the outer Gradle daemon
+        run: ./gradlew -Dgradle.user.home="$RUNNER_TEMP/flatpak-gradle-home" --stop
+
+      - name: Clone the Flathub packaging repo
+        run: |
+          git clone --depth 1 --recurse-submodules \
+            https://github.com/flathub/org.meshtastic.MeshtasticDesktop.git \
+            "$RUNNER_TEMP/org.meshtastic.MeshtasticDesktop"
+
+      # Excludes are unanchored (`build/`, not `/build/`): generation now runs in this job,
+      # and a leading slash would let every nested module's build output through.
+      - name: Wire overlay manifest + sources
+        run: |
+          cp scripts/verify-flatpak/desktop-offline.yaml \
+            "$RUNNER_TEMP/org.meshtastic.MeshtasticDesktop/org.meshtastic.MeshtasticDesktop.yaml"
+          python3 scripts/verify-flatpak/bump-flathub-manifest.py --gradle-only \
+            "$RUNNER_TEMP/org.meshtastic.MeshtasticDesktop/org.meshtastic.MeshtasticDesktop.yaml" \
+            gradle/wrapper/gradle-wrapper.properties
+          cp flatpak-sources.json \
+            "$RUNNER_TEMP/org.meshtastic.MeshtasticDesktop/flatpak-sources.json"
+          rsync -a --delete \
+            --exclude='build/' --exclude='.gradle/' \
+            --exclude='/.idea/' --exclude='/local.properties' \
+            ./ "$RUNNER_TEMP/org.meshtastic.MeshtasticDesktop/meshtastic-android/"
+
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build flatpak offline
+        working-directory: ${{ runner.temp }}/org.meshtastic.MeshtasticDesktop
+        run: |
+          flatpak-builder --user --repo=repo --install-deps-from=flathub \
+            --force-clean builddir org.meshtastic.MeshtasticDesktop.yaml
+          echo "### ✅ Offline Flatpak build succeeded (${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
+
+      # The build succeeding IS the verification; bundling costs ~2 min per arch for an
+      # artifact nobody installs from CI. Dispatch only, where a tester asked for it.
+      - name: Export .flatpak bundle
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: ${{ runner.temp }}/org.meshtastic.MeshtasticDesktop
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          flatpak build-bundle repo "org.meshtastic.MeshtasticDesktop.${ARCH}.flatpak" \
+            org.meshtastic.MeshtasticDesktop \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: meshtastic-desktop-flatpak-${{ matrix.arch }}
+          path: ${{ runner.temp }}/org.meshtastic.MeshtasticDesktop/org.meshtastic.MeshtasticDesktop.${{ matrix.arch }}.flatpak

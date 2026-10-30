@@ -1,0 +1,311 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.node.list
+
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import org.koin.core.annotation.KoinViewModel
+import org.meshtastic.core.common.util.LocaleUnitsProvider
+import org.meshtastic.core.common.util.MeasurementSystem
+import org.meshtastic.core.common.util.TemperatureUnit
+import org.meshtastic.core.model.DeviceType
+import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.NodeListDensity
+import org.meshtastic.core.model.NodeSortOption
+import org.meshtastic.core.model.effectiveLongName
+import org.meshtastic.core.repository.AdminController
+import org.meshtastic.core.repository.ConnectionStateProvider
+import org.meshtastic.core.repository.DeviceHardwareRepository
+import org.meshtastic.core.repository.NodeManager
+import org.meshtastic.core.repository.NodeRepository
+import org.meshtastic.core.repository.RadioConfigRepository
+import org.meshtastic.core.repository.RadioInterfaceService
+import org.meshtastic.core.ui.viewmodel.safeLaunch
+import org.meshtastic.core.ui.viewmodel.stateInWhileSubscribed
+import org.meshtastic.feature.node.detail.NodeManagementActions
+import org.meshtastic.feature.node.detail.NodeRequestActions
+import org.meshtastic.feature.node.domain.usecase.GetFilteredNodesUseCase
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.Config
+
+@Suppress("LongParameterList", "TooManyFunctions")
+@KoinViewModel
+class NodeListViewModel(
+    private val savedStateHandle: SavedStateHandle,
+    private val nodeRepository: NodeRepository,
+    private val radioConfigRepository: RadioConfigRepository,
+    private val connectionStateProvider: ConnectionStateProvider,
+    private val adminController: AdminController,
+    private val radioInterfaceService: RadioInterfaceService,
+    private val deviceHardwareRepository: DeviceHardwareRepository,
+    val nodeManagementActions: NodeManagementActions,
+    private val nodeRequestActions: NodeRequestActions,
+    private val getFilteredNodesUseCase: GetFilteredNodesUseCase,
+    val nodeFilterPreferences: NodeFilterPreferences,
+    private val nodeManager: NodeManager,
+    localeUnitsProvider: LocaleUnitsProvider,
+) : ViewModel() {
+
+    val ourNodeInfo: StateFlow<Node?> = nodeRepository.ourNodeInfo
+
+    val onlineNodeCount = nodeRepository.onlineNodeCount.stateInWhileSubscribed(initialValue = 0)
+
+    val totalNodeCount = nodeRepository.totalNodeCount.stateInWhileSubscribed(initialValue = 0)
+
+    val connectionState = connectionStateProvider.connectionState
+
+    val deviceType: StateFlow<DeviceType?> =
+        radioInterfaceService.currentDeviceAddressFlow
+            .map { address -> address?.let { DeviceType.fromAddress(it) } }
+            .stateInWhileSubscribed(initialValue = null)
+
+    val nodeListDensity: StateFlow<NodeListDensity> =
+        nodeFilterPreferences.nodeListDensity
+            .map { name -> NodeListDensity.fromName(name) }
+            .stateInWhileSubscribed(initialValue = NodeListDensity.COMPLETE)
+
+    val shouldShowPower = nodeFilterPreferences.shouldShowPower
+    val shouldShowLastHeard = nodeFilterPreferences.shouldShowLastHeard
+    val lastHeardIsRelative = nodeFilterPreferences.lastHeardIsRelative
+    val shouldShowLocation = nodeFilterPreferences.shouldShowLocation
+    val shouldShowHops = nodeFilterPreferences.shouldShowHops
+    val shouldShowSignal = nodeFilterPreferences.shouldShowSignal
+    val shouldShowChannel = nodeFilterPreferences.shouldShowChannel
+    val shouldShowRole = nodeFilterPreferences.shouldShowRole
+    val shouldShowTelemetry = nodeFilterPreferences.shouldShowTelemetry
+
+    private val nodeSortOption = nodeFilterPreferences.nodeSortOption
+
+    private val _nodeFilterText = savedStateHandle.getStateFlow(KEY_FILTER_TEXT, "")
+
+    /**
+     * The unheard filter may only narrow the list once the firmware has proven it reports the field AND the handshake's
+     * NodeInfo install has completed. Between setFirmwareVersion flipping the capability and that install landing,
+     * cached rows can still carry a false from a previous session, and the filter would hide valid nodes until each was
+     * rewritten.
+     */
+    private val unheardFilterAllowed: Flow<Boolean> =
+        combine(nodeManager.reportsHeardOnCurrentLora, nodeManager.isNodeDbReady) { reportsHeard, dbReady ->
+            reportsHeard && dbReady
+        }
+
+    // Three flows regardless of how many filters exist: the store hands back all of them as one value.
+    private val nodeFilter: Flow<NodeFilterState> =
+        combine(_nodeFilterText, nodeFilterPreferences.filters, unheardFilterAllowed) { text, prefs, unheardAllowed ->
+            NodeFilterState(
+                filterText = text,
+                includeUnknown = prefs.includeUnknown,
+                excludeInfrastructure = prefs.excludeInfrastructure,
+                onlyOnline = prefs.onlyOnline,
+                onlyDirect = prefs.onlyDirect,
+                showIgnored = prefs.showIgnored,
+                onlySigned = prefs.onlySigned,
+                onlyEncrypted = prefs.onlyEncrypted,
+                excludeMqtt = prefs.excludeMqtt,
+                excludeUnheard = prefs.excludeUnheard && unheardAllowed,
+            )
+        }
+
+    // Re-read on every locale change: this ViewModel survives the configuration change one triggers, so a value
+    // snapshotted at construction would keep showing the old units until the screen is rebuilt.
+    private val localeUnits: Flow<LocaleUnits> =
+        combine(localeUnitsProvider.measurementSystem, localeUnitsProvider.temperatureUnit) { system, temperature ->
+            LocaleUnits(distanceUnits = system, tempInFahrenheit = temperature == TemperatureUnit.FAHRENHEIT)
+        }
+
+    val nodesUiState: StateFlow<NodesUiState> =
+        combine(nodeSortOption, nodeFilter, localeUnits) { sort, nodeFilter, units ->
+            NodesUiState(
+                sort = sort,
+                filter = nodeFilter,
+                distanceUnits = units.distanceUnits,
+                tempInFahrenheit = units.tempInFahrenheit,
+            )
+        }
+            .stateInWhileSubscribed(initialValue = NodesUiState())
+
+    val nodeList: StateFlow<List<Node>> =
+        combine(nodeFilter, nodeSortOption, ::Pair)
+            .flatMapLatest { (filter, sort) -> getFilteredNodesUseCase.invoke(filter, sort) }
+            .heardWhileUnsupported()
+            .stateInWhileSubscribed(initialValue = emptyList())
+
+    val unfilteredNodeList: StateFlow<List<Node>> =
+        nodeRepository.getNodes().heardWhileUnsupported().stateInWhileSubscribed(initialValue = emptyList())
+
+    /**
+     * Presents every node as heard while the firmware cannot report the field. The database is normalized
+     * asynchronously when unsupported firmware connects; until that write lands, rows can still carry a false written
+     * by a previous radio, and the marker, banner and removal offer would otherwise act on it.
+     */
+    private fun Flow<List<Node>>.heardWhileUnsupported(): Flow<List<Node>> =
+        combine(this, nodeManager.reportsHeardOnCurrentLora) { nodes, reportsHeard ->
+            if (reportsHeard) {
+                nodes
+            } else {
+                nodes.map { if (it.heardOnCurrentLora) it else it.copy(heardOnCurrentLora = true) }
+            }
+        }
+
+    /** The nodes the unheard banner offers for removal: see [selectRemovableUnheardNodes], less the ones kept. */
+    val unheardBannerNodes: StateFlow<List<Node>> =
+        combine(unfilteredNodeList, ourNodeInfo, nodeFilterPreferences.keptUnheardNodes) { nodes, ourNode, kept ->
+            selectRemovableUnheardNodes(nodes, ourNode?.num).filterNot { it.num in kept }
+        }
+            .stateInWhileSubscribed(initialValue = emptyList())
+
+    fun keepUnheardNodes(nodes: List<Node>) = nodeFilterPreferences.keepUnheardNodes(nodes.mapTo(HashSet()) { it.num })
+
+    private val _deviceImageUrls = MutableStateFlow<Map<Int, String>>(emptyMap())
+
+    /** Maps hw_model int value → device image URL from the flasher CDN. */
+    val deviceImageUrls: StateFlow<Map<Int, String>> = _deviceImageUrls.asStateFlow()
+
+    init {
+        // Resolve device image URLs as nodes arrive
+        viewModelScope.launch {
+            nodeList.collect { nodes ->
+                val newModels = nodes.map { it.user.hw_model.value }.distinct().filter { it !in _deviceImageUrls.value }
+                for (hwModel in newModels) {
+                    resolveDeviceImageUrl(hwModel)
+                }
+            }
+        }
+        // A kept node that is heard again leaves the kept set, so a later LoRa change offers it again. Reads the raw
+        // rows, and only once they are authoritative: unfilteredNodeList shows every node heard until then.
+        viewModelScope.launch {
+            combine(nodeRepository.getNodes(), unheardFilterAllowed, nodeFilterPreferences.keptUnheardNodes) {
+                    nodes,
+                    authoritative,
+                    kept,
+                ->
+                if (!authoritative || kept.isEmpty()) {
+                    emptySet()
+                } else {
+                    nodes.filter { it.num in kept && it.heardOnCurrentLora }.mapTo(HashSet()) { it.num }
+                }
+            }
+                .collect { heardAgain ->
+                    if (heardAgain.isNotEmpty()) nodeFilterPreferences.forgetKeptUnheardNodes(heardAgain)
+                }
+        }
+    }
+
+    private suspend fun resolveDeviceImageUrl(hwModel: Int) {
+        val hw = deviceHardwareRepository.getDeviceHardwareByModel(hwModel).getOrNull() ?: return
+        val imageFile = hw.images?.getOrNull(1) ?: hw.images?.getOrNull(0) ?: return
+        val url = "$FLASHER_DEVICE_IMAGE_BASE_URL$imageFile"
+        _deviceImageUrls.value = _deviceImageUrls.value + (hwModel to url)
+    }
+
+    var nodeFilterText: String
+        get() = _nodeFilterText.value
+        set(value) {
+            savedStateHandle[KEY_FILTER_TEXT] = value
+        }
+
+    fun setSortOption(sort: NodeSortOption) {
+        nodeFilterPreferences.setNodeSort(sort)
+    }
+
+    fun setChannels(channelSet: ChannelSet) = safeLaunch(tag = "setChannels") {
+        radioConfigRepository.replaceAllSettings(channelSet.settings)
+        val newLoraConfig = channelSet.lora_config
+        if (newLoraConfig != null) {
+            adminController.setLocalConfig(Config.Builder().also { wb -> wb.lora = newLoraConfig }.build())
+        }
+    }
+
+    fun favoriteNode(node: Node) = nodeManagementActions.requestFavoriteNode(viewModelScope, node)
+
+    fun ignoreNode(node: Node) = nodeManagementActions.requestIgnoreNode(viewModelScope, node)
+
+    fun setNodeDisplayName(nodeNum: Int, displayName: String) {
+        safeLaunch(tag = "setNodeDisplayName") { nodeManagementActions.setNodeDisplayName(nodeNum, displayName) }
+    }
+
+    fun muteNode(node: Node) = nodeManagementActions.requestMuteNode(viewModelScope, node)
+
+    fun removeNodes(nodes: List<Node>) = nodeManagementActions.requestRemoveNodes(viewModelScope, nodes)
+
+    /** Returns the contact key for navigating to a direct message conversation with this node. */
+    fun getDirectMessageRoute(node: Node): String {
+        val ourNode = ourNodeInfo.value
+        val hasPKC = ourNode?.hasPKC == true && node.hasPKC
+        val channel = if (hasPKC) NodeAddress.PKC_CHANNEL_INDEX else node.channel
+        return "${channel}${node.user.id}"
+    }
+
+    /** Start time of the last traceroute, shared with the detail buttons: firmware allows one per 30 s window. */
+    val lastTracerouteTime: StateFlow<Long?> = nodeRequestActions.lastTracerouteTime
+
+    /** Initiates a trace route request to the specified node. */
+    fun traceRoute(node: Node) {
+        safeLaunch(tag = "requestTraceroute") { nodeRequestActions.requestTraceroute(node.num, node.effectiveLongName) }
+    }
+
+    companion object {
+        private const val KEY_FILTER_TEXT = "filter_text"
+        private const val FLASHER_DEVICE_IMAGE_BASE_URL = "https://flasher.meshtastic.org/img/devices/"
+    }
+}
+
+/** The locale-derived display units, re-read together whenever the OS reports a locale change. */
+private data class LocaleUnits(val distanceUnits: MeasurementSystem, val tempInFahrenheit: Boolean)
+
+data class NodesUiState(
+    val sort: NodeSortOption = NodeSortOption.LAST_HEARD,
+    val filter: NodeFilterState = NodeFilterState(),
+    val distanceUnits: MeasurementSystem = MeasurementSystem.METRIC,
+    val tempInFahrenheit: Boolean = false,
+)
+
+data class NodeFilterState(
+    val filterText: String = "",
+    val includeUnknown: Boolean = true,
+    val excludeInfrastructure: Boolean = false,
+    val onlyOnline: Boolean = false,
+    val onlyDirect: Boolean = false,
+    val showIgnored: Boolean = false,
+    val onlySigned: Boolean = false,
+    val onlyEncrypted: Boolean = false,
+    val excludeMqtt: Boolean = false,
+    val excludeUnheard: Boolean = false,
+) {
+    /** True if any user-applied filter is narrowing the visible node set. Unknown nodes are shown unless opted out. */
+    val isActive: Boolean
+        get() =
+            !includeUnknown ||
+                filterText.isNotEmpty() ||
+                excludeInfrastructure ||
+                onlyOnline ||
+                onlyDirect ||
+                onlySigned ||
+                onlyEncrypted ||
+                excludeMqtt ||
+                excludeUnheard
+}

@@ -1,0 +1,587 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+@file:Suppress("LongMethod")
+
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.model.Capabilities
+import org.meshtastic.core.model.MqttConnectionState
+import org.meshtastic.core.model.MqttProbeStatus
+import org.meshtastic.core.model.Node
+import org.meshtastic.core.network.mqtt.LatLon
+import org.meshtastic.core.network.mqtt.MqttRootTopic
+import org.meshtastic.core.network.repository.effectiveTlsEnabled
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.json_output_enabled
+import org.meshtastic.core.resources.mqtt
+import org.meshtastic.core.resources.mqtt_config
+import org.meshtastic.core.resources.mqtt_probe_dns_failure
+import org.meshtastic.core.resources.mqtt_probe_other_failure
+import org.meshtastic.core.resources.mqtt_probe_rejected
+import org.meshtastic.core.resources.mqtt_probe_running
+import org.meshtastic.core.resources.mqtt_probe_success
+import org.meshtastic.core.resources.mqtt_probe_success_with_info
+import org.meshtastic.core.resources.mqtt_probe_tcp_failure
+import org.meshtastic.core.resources.mqtt_probe_timeout
+import org.meshtastic.core.resources.mqtt_probe_tls_failure
+import org.meshtastic.core.resources.mqtt_proxy_local
+import org.meshtastic.core.resources.mqtt_proxy_local_summary
+import org.meshtastic.core.resources.mqtt_status_connected
+import org.meshtastic.core.resources.mqtt_status_connecting
+import org.meshtastic.core.resources.mqtt_status_disconnected
+import org.meshtastic.core.resources.mqtt_status_disconnected_with_reason
+import org.meshtastic.core.resources.mqtt_status_inactive
+import org.meshtastic.core.resources.mqtt_status_reconnecting
+import org.meshtastic.core.resources.mqtt_status_reconnecting_with_attempt
+import org.meshtastic.core.resources.mqtt_status_topics_refused_all
+import org.meshtastic.core.resources.mqtt_status_topics_refused_some
+import org.meshtastic.core.resources.mqtt_test_connection
+import org.meshtastic.core.resources.mqtt_topic_finder
+import org.meshtastic.core.resources.schema_mqtt_address
+import org.meshtastic.core.resources.schema_mqtt_address_description
+import org.meshtastic.core.resources.schema_mqtt_enabled
+import org.meshtastic.core.resources.schema_mqtt_enabled_description
+import org.meshtastic.core.resources.schema_mqtt_encryption_enabled
+import org.meshtastic.core.resources.schema_mqtt_encryption_enabled_description
+import org.meshtastic.core.resources.schema_mqtt_map_reporting_enabled
+import org.meshtastic.core.resources.schema_mqtt_password
+import org.meshtastic.core.resources.schema_mqtt_proxy_to_client_enabled
+import org.meshtastic.core.resources.schema_mqtt_proxy_to_client_enabled_description
+import org.meshtastic.core.resources.schema_mqtt_root
+import org.meshtastic.core.resources.schema_mqtt_root_description
+import org.meshtastic.core.resources.schema_mqtt_tls_enabled
+import org.meshtastic.core.resources.schema_mqtt_username
+import org.meshtastic.core.resources.schema_mqtt_username_description
+import org.meshtastic.core.resources.tls_enabled_public_broker_summary
+import org.meshtastic.core.ui.component.EditPasswordPreference
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.proto.Config
+import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.json_enabled
+
+// json_enabled still drives MQTT JSON on firmware below its deprecated_since; beyond that the schema gate hides it
+// unless the node still holds it set, so a stale value stays visible.
+@Suppress("DEPRECATION")
+@Composable
+fun MQTTConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val firmwareVersion = state.metadata?.firmware_version
+    val capabilities = remember(firmwareVersion) { Capabilities(firmwareVersion) }
+    val destNode by viewModel.destNode.collectAsStateWithLifecycle()
+    val mqttProxyState by viewModel.mqttConnectionState.collectAsStateWithLifecycle()
+    val mqttProxyActive by viewModel.mqttProxyActive.collectAsStateWithLifecycle()
+    val probeStatus by viewModel.mqttProbeStatus.collectAsStateWithLifecycle()
+    val destNum = destNode?.num
+    val mqttConfig = state.moduleConfig.mqtt ?: ModuleConfig.MQTTConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = mqttConfig)
+
+    val currentMapReportSettings =
+        formState.value.map_report_settings ?: ModuleConfig.MapReportSettings.Builder().build()
+    if (!currentMapReportSettings.should_report_location) {
+        val settings =
+            currentMapReportSettings
+                .newBuilder()
+                .also { wb -> wb.should_report_location = viewModel.shouldReportLocation(destNum).value }
+                .build()
+        formState.value = formState.value.newBuilder().also { wb -> wb.map_report_settings = settings }.build()
+    }
+
+    val consentValid =
+        if (formState.value.map_reporting_enabled) {
+            (formState.value.map_report_settings?.should_report_location ?: false) &&
+                (formState.value.map_report_settings?.publish_interval_secs ?: 0) >= MIN_INTERVAL_SECS
+        } else {
+            true
+        }
+    val focusManager = LocalFocusManager.current
+    // Zero means closed; each opening takes the next number so the sheet samples afresh.
+    var topicFinderSession by rememberSaveable { mutableIntStateOf(0) }
+    var lastTopicFinderSession by rememberSaveable { mutableIntStateOf(0) }
+    if (topicFinderSession != 0) {
+        TopicFinder(
+            session = topicFinderSession,
+            formState = formState,
+            region = state.radioConfig.lora?.region,
+            radio = destNode,
+            onClose = { topicFinderSession = 0 },
+        )
+    }
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.mqtt),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected && consentValid,
+        saveEnabled = mqttSaveEnabled(editable = state.connected && consentValid, root = formState.value.root),
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = ModuleConfig.Builder().also { wb -> wb.mqtt = it }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        item { MqttStatusRow(mqttProxyState) }
+
+        item {
+            // Phone-local proxy control: stops/starts the MQTT proxy running on this phone via
+            // MqttManager directly, independent of the device's persisted MQTT config. Lets the user
+            // cut the proxy firehose immediately without the slow read-modify-write-readback round-trip.
+            val mqtt = state.moduleConfig.mqtt
+            val canProxy = mqtt?.enabled == true && mqtt.proxy_to_client_enabled == true
+            TitledCard(title = null) {
+                SwitchPreference(
+                    title = stringResource(Res.string.mqtt_proxy_local),
+                    summary = stringResource(Res.string.mqtt_proxy_local_summary),
+                    checked = mqttProxyActive,
+                    // Off→on only makes sense when the device config permits proxying; keep the
+                    // switch live while the proxy is running so it can always be turned off.
+                    enabled = state.connected && (mqttProxyActive || canProxy),
+                    onCheckedChange = viewModel::setMqttProxyActive,
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+
+        val mqttKeys =
+            splitFieldKeys(SettingsSearchCatalog.fieldKeys(ModuleRoute.MQTT.route)) {
+                it != "schema_mqtt_map_reporting_enabled" && !it.startsWith("schema_mapreportsettings_")
+            }
+        fieldItem(mqttKeys.first) {
+            TitledCard(title = stringResource(Res.string.mqtt_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_mqtt_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_mqtt_enabled),
+                    summary = stringResource(Res.string.schema_mqtt_enabled_description),
+                    checked = formState.value.enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                MqttAddressAndProbe(
+                    enabled = state.connected,
+                    formState = formState,
+                    probeStatus = probeStatus,
+                    focusManager = focusManager,
+                    onProbe = viewModel::probeMqttConnection,
+                    onClearProbe = viewModel::clearMqttProbeStatus,
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_mqtt_username),
+                    modifier = Modifier.settingsField(Res.string.schema_mqtt_username),
+                    summary = stringResource(Res.string.schema_mqtt_username_description),
+                    value = formState.value.username,
+                    maxSize = 63, // username max_size:64
+                    enabled = state.connected,
+                    isError = false,
+                    keyboardOptions =
+                    KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.username = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                MqttPasswordPreference(
+                    enabled = state.connected,
+                    password = formState.value.password,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.password = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_mqtt_encryption_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_mqtt_encryption_enabled),
+                    summary = stringResource(Res.string.schema_mqtt_encryption_enabled_description),
+                    checked = formState.value.encryption_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.encryption_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                if (capabilities.offers(ModuleConfig.MQTTConfig.json_enabled, isSet = formState.value.json_enabled)) {
+                    SwitchPreference(
+                        title = stringResource(Res.string.json_output_enabled),
+                        checked = formState.value.json_enabled,
+                        enabled = state.connected,
+                        onCheckedChange = {
+                            formState.value = formState.value.newBuilder().also { wb -> wb.json_enabled = it }.build()
+                        },
+                        containerColor = CardDefaults.cardColors().containerColor,
+                    )
+                    HorizontalDivider()
+                }
+                MqttTlsPreference(
+                    enabled = state.connected,
+                    address = formState.value.address,
+                    tlsEnabled = formState.value.tls_enabled,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.tls_enabled = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_mqtt_root),
+                    modifier = Modifier.settingsField(Res.string.schema_mqtt_root),
+                    summary = stringResource(Res.string.schema_mqtt_root_description),
+                    value = formState.value.root,
+                    maxSize = 31, // root max_size:32
+                    enabled = state.connected,
+                    isError = !mqttRootAccepted(formState.value.root),
+                    keyboardOptions =
+                    KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.root = it }.build()
+                    },
+                )
+                TextButton(
+                    onClick = {
+                        lastTopicFinderSession++
+                        topicFinderSession = lastTopicFinderSession
+                    },
+                    enabled = state.connected,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    Text(stringResource(Res.string.mqtt_topic_finder))
+                }
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_mqtt_proxy_to_client_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_mqtt_proxy_to_client_enabled),
+                    summary = stringResource(Res.string.schema_mqtt_proxy_to_client_enabled_description),
+                    checked = formState.value.proxy_to_client_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.proxy_to_client_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+
+        fieldItem(mqttKeys.second) {
+            TitledCard(title = stringResource(Res.string.schema_mqtt_map_reporting_enabled)) {
+                val mapReportSettings =
+                    formState.value.map_report_settings ?: ModuleConfig.MapReportSettings.Builder().build()
+                MapReportingPreference(
+                    mapReportingEnabled = formState.value.map_reporting_enabled,
+                    onMapReportingEnabledChanged = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.map_reporting_enabled = it }.build()
+                    },
+                    shouldReportLocation = mapReportSettings.should_report_location,
+                    onShouldReportLocationChanged = {
+                        viewModel.setShouldReportLocation(destNum, it)
+                        val settings =
+                            mapReportSettings.newBuilder().also { wb -> wb.should_report_location = it }.build()
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.map_report_settings = settings }.build()
+                    },
+                    positionPrecision = mapReportSettings.position_precision,
+                    onPositionPrecisionChanged = {
+                        val settings = mapReportSettings.newBuilder().also { wb -> wb.position_precision = it }.build()
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.map_report_settings = settings }.build()
+                    },
+                    publishIntervalSecs = mapReportSettings.publish_interval_secs,
+                    onPublishIntervalSecsChanged = {
+                        val settings =
+                            mapReportSettings.newBuilder().also { wb -> wb.publish_interval_secs = it }.build()
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.map_report_settings = settings }.build()
+                    },
+                    enabled = state.connected,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopicFinder(
+    session: Int,
+    formState: ConfigState<ModuleConfig.MQTTConfig>,
+    region: Config.LoRaConfig.RegionCode?,
+    radio: Node?,
+    onClose: () -> Unit,
+) {
+    MqttTopicFinderSheet(
+        session = session,
+        config = formState.value,
+        regionName = region?.takeIf { it != Config.LoRaConfig.RegionCode.UNSET }?.name,
+        radioPosition = radio?.takeIf { it.validPosition != null }?.let { LatLon(it.latitude, it.longitude) },
+        onPick = { topic ->
+            formState.value = formState.value.newBuilder().also { wb -> wb.root = topic }.build()
+            onClose()
+        },
+        onDismiss = onClose,
+    )
+}
+
+private const val MIN_INTERVAL_SECS = 3600
+
+// An empty address means the public broker, both here and in the firmware's PubSubConfig.
+private const val DEFAULT_MQTT_ADDRESS = "mqtt.meshtastic.org"
+
+internal const val MQTT_TLS_SWITCH_TEST_TAG = "mqtt_tls_switch"
+
+/**
+ * The radio uses the stored `tls_enabled` verbatim when it reaches the broker over its own Wi-Fi or Ethernet, so what
+ * this switch shows must be what gets stored and sent: it renders and writes that flag alone, never a forced value. The
+ * phone-relay's own TLS upgrade for the public broker is stated in the summary instead.
+ */
+@Composable
+internal fun MqttTlsPreference(
+    enabled: Boolean,
+    address: String,
+    tlsEnabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val resolvedAddress = address.ifEmpty { DEFAULT_MQTT_ADDRESS }
+    val relayForcesTls = effectiveTlsEnabled(resolvedAddress, tlsEnabled = false)
+    SwitchPreference(
+        title = stringResource(Res.string.schema_mqtt_tls_enabled),
+        summary = if (relayForcesTls) stringResource(Res.string.tls_enabled_public_broker_summary) else "",
+        checked = tlsEnabled,
+        enabled = enabled,
+        modifier = Modifier.settingsField(Res.string.schema_mqtt_tls_enabled).testTag(MQTT_TLS_SWITCH_TEST_TAG),
+        onCheckedChange = onCheckedChange,
+        containerColor = CardDefaults.cardColors().containerColor,
+    )
+}
+
+@Composable
+internal fun MqttPasswordPreference(
+    enabled: Boolean,
+    password: String,
+    onValueChange: (String) -> Unit,
+    keyboardActions: KeyboardActions = KeyboardActions(),
+) {
+    EditPasswordPreference(
+        title = stringResource(Res.string.schema_mqtt_password),
+        modifier = Modifier.settingsField(Res.string.schema_mqtt_password),
+        value = password,
+        maxSize = 31, // password max_size:32
+        enabled = enabled,
+        keyboardActions = keyboardActions,
+        onValueChanged = onValueChange,
+    )
+}
+
+private val AmberColor = Color(0xFFFFA000)
+private val GreenColor = Color(0xFF4CAF50)
+
+@Composable
+private fun MqttStatusRow(state: MqttConnectionState) {
+    val (label, color) =
+        when (state) {
+            is MqttConnectionState.Inactive ->
+                stringResource(Res.string.mqtt_status_inactive) to MaterialTheme.colorScheme.outline
+
+            is MqttConnectionState.Disconnected -> {
+                val text =
+                    state.reason?.let { stringResource(Res.string.mqtt_status_disconnected_with_reason, it) }
+                        ?: stringResource(Res.string.mqtt_status_disconnected)
+                text to MaterialTheme.colorScheme.error
+            }
+
+            is MqttConnectionState.Connecting -> stringResource(Res.string.mqtt_status_connecting) to AmberColor
+
+            is MqttConnectionState.Connected -> stringResource(Res.string.mqtt_status_connected) to GreenColor
+
+            is MqttConnectionState.SubscriptionRefused -> {
+                val topics = state.refused.entries.joinToString { (topic, reason) -> "$topic ($reason)" }
+                if (state.granted == 0) {
+                    stringResource(Res.string.mqtt_status_topics_refused_all, topics) to MaterialTheme.colorScheme.error
+                } else {
+                    stringResource(Res.string.mqtt_status_topics_refused_some, topics) to AmberColor
+                }
+            }
+
+            is MqttConnectionState.Reconnecting -> {
+                val err = state.lastError
+                val text =
+                    if (err != null) {
+                        stringResource(Res.string.mqtt_status_reconnecting_with_attempt, state.attempt, err)
+                    } else {
+                        stringResource(Res.string.mqtt_status_reconnecting)
+                    }
+                text to AmberColor
+            }
+        }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(horizontal = 4.dp),
+    ) {
+        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(color))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun MqttAddressAndProbe(
+    enabled: Boolean,
+    formState: ConfigState<ModuleConfig.MQTTConfig>,
+    probeStatus: MqttProbeStatus?,
+    focusManager: FocusManager,
+    onProbe: (address: String, tlsEnabled: Boolean, username: String, password: String) -> Unit,
+    onClearProbe: () -> Unit,
+) {
+    EditTextPreference(
+        title = stringResource(Res.string.schema_mqtt_address),
+        modifier = Modifier.settingsField(Res.string.schema_mqtt_address),
+        summary = stringResource(Res.string.schema_mqtt_address_description),
+        value = formState.value.address,
+        maxSize = 63, // address max_size:64
+        enabled = enabled,
+        isError = false,
+        keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+        onValueChanged = {
+            formState.value = formState.value.newBuilder().also { wb -> wb.address = it }.build()
+            onClearProbe()
+        },
+    )
+    HorizontalDivider()
+    MqttProbeRow(
+        enabled = enabled && formState.value.address.isNotBlank(),
+        status = probeStatus,
+        onTestClick = {
+            focusManager.clearFocus()
+            val resolvedAddress = formState.value.address.ifEmpty { DEFAULT_MQTT_ADDRESS }
+            val effectiveTls = effectiveTlsEnabled(resolvedAddress, formState.value.tls_enabled)
+            onProbe(formState.value.address, effectiveTls, formState.value.username, formState.value.password)
+        },
+    )
+}
+
+@Composable
+private fun MqttProbeRow(enabled: Boolean, status: MqttProbeStatus?, onTestClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Button(onClick = onTestClick, enabled = enabled && status !is MqttProbeStatus.Probing) {
+                Text(stringResource(Res.string.mqtt_test_connection))
+            }
+            val (probeText, probeColor) = status.toLabel() ?: return@Row
+            Text(text = probeText, style = MaterialTheme.typography.bodySmall, color = probeColor)
+        }
+    }
+}
+
+@Composable
+private fun MqttProbeStatus?.toLabel(): Pair<String, Color>? = when (this) {
+    null -> null
+
+    is MqttProbeStatus.Probing ->
+        stringResource(Res.string.mqtt_probe_running) to MaterialTheme.colorScheme.onSurfaceVariant
+
+    is MqttProbeStatus.Success -> {
+        val text =
+            serverInfo?.let { stringResource(Res.string.mqtt_probe_success_with_info, it) }
+                ?: stringResource(Res.string.mqtt_probe_success)
+        text to GreenColor
+    }
+
+    is MqttProbeStatus.Rejected ->
+        stringResource(Res.string.mqtt_probe_rejected, reason ?: reasonCode.toString()) to
+            MaterialTheme.colorScheme.error
+
+    is MqttProbeStatus.DnsFailure ->
+        stringResource(Res.string.mqtt_probe_dns_failure) to MaterialTheme.colorScheme.error
+
+    is MqttProbeStatus.TcpFailure ->
+        stringResource(Res.string.mqtt_probe_tcp_failure) to MaterialTheme.colorScheme.error
+
+    is MqttProbeStatus.TlsFailure ->
+        stringResource(Res.string.mqtt_probe_tls_failure, message ?: "unknown") to MaterialTheme.colorScheme.error
+
+    is MqttProbeStatus.Timeout ->
+        stringResource(Res.string.mqtt_probe_timeout, timeoutMs.toInt()) to MaterialTheme.colorScheme.error
+
+    is MqttProbeStatus.Other ->
+        stringResource(Res.string.mqtt_probe_other_failure) to MaterialTheme.colorScheme.error
+}
+
+/** Empty is the firmware's own default root, so only a typed root can be wrong. */
+internal fun mqttRootAccepted(root: String): Boolean = root.isEmpty() || MqttRootTopic.problem(root) == null
+
+/** A root the radio would reject blocks Save while the field stays editable. */
+internal fun mqttSaveEnabled(editable: Boolean, root: String): Boolean = editable && mqttRootAccepted(root)

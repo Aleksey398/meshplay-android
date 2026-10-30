@@ -1,0 +1,225 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.ui.component
+
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.VerticalDragHandle
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.layout.PaneExpansionState
+import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldScope
+import androidx.compose.material3.adaptive.layout.rememberPaneExpansionState
+import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.NavEntryDecorator
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.rememberDecoratedNavEntries
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.scene.Scene
+import androidx.navigation3.ui.NavDisplay
+import co.touchlab.kermit.Logger
+import org.meshtastic.core.navigation.MultiBackstack
+import org.meshtastic.core.navigation.rumViewName
+import org.meshtastic.core.repository.PlatformAnalytics
+
+/**
+ * Shared [NavDisplay] wrapper that configures the standard Meshtastic entry decorators, scene strategies, and
+ * transition animations for all platform hosts.
+ *
+ * This version supports multiple backstacks by accepting a [MultiBackstack] state holder. Every tab's stack is
+ * decorated with that tab's own saveable-state and ViewModel-store decorators and only the active tab's entries reach
+ * [NavDisplay], so showing another tab clears nothing while an entry removed from any stack is still cleared.
+ * [entryProvider] must resolve the keys of every tab, not only the active one.
+ */
+@Composable
+fun MeshtasticNavDisplay(
+    multiBackstack: MultiBackstack,
+    entryProvider: (key: NavKey) -> NavEntry<NavKey>,
+    modifier: Modifier = Modifier,
+    analytics: PlatformAnalytics? = null,
+) {
+    val activeTab = multiBackstack.currentTabRoute
+    MeshtasticNavDisplayHost(
+        backStack = multiBackstack.activeBackStack,
+        onBack = { multiBackstack.goBack() },
+        modifier = modifier,
+        analytics = analytics,
+    ) {
+        val entriesByTab =
+            multiBackstack.backStacks.mapValues { (tab, stack) ->
+                key(tab) {
+                    val keys = stack.toList()
+                    val isActive = tab == activeTab
+                    // Host providers close over the active stack, so a tab's entries are rebuilt when it activates.
+                    val entries = remember(keys, isActive) { keys.map(entryProvider) }
+                    rememberDecoratedNavEntries(entries, rememberMeshtasticEntryDecorators())
+                }
+            }
+        entriesByTab.getValue(activeTab)
+    }
+}
+
+/** Shared [NavDisplay] wrapper for a single backstack. */
+@Composable
+fun MeshtasticNavDisplay(
+    backStack: NavBackStack<NavKey>,
+    entryProvider: (key: NavKey) -> NavEntry<NavKey>,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    analytics: PlatformAnalytics? = null,
+) {
+    val decorators = rememberMeshtasticEntryDecorators()
+    MeshtasticNavDisplayHost(
+        backStack = backStack,
+        onBack =
+        onBack
+            ?: {
+                if (backStack.size > 1) {
+                    backStack.removeLastOrNull()
+                }
+            },
+        modifier = modifier,
+        analytics = analytics,
+    ) {
+        rememberDecoratedNavEntries(backStack, decorators, entryProvider)
+    }
+}
+
+@Composable
+private fun rememberMeshtasticEntryDecorators(): List<NavEntryDecorator<NavKey>> {
+    val saveableDecorator = rememberSaveableStateHolderNavEntryDecorator<NavKey>()
+    val vmStoreDecorator = rememberViewModelStoreNavEntryDecorator<NavKey>()
+    return remember(saveableDecorator, vmStoreDecorator) { listOf(saveableDecorator, vmStoreDecorator) }
+}
+
+@OptIn(ExperimentalMaterial3AdaptiveApi::class, ExperimentalSharedTransitionApi::class)
+@Composable
+private fun MeshtasticNavDisplayHost(
+    backStack: NavBackStack<NavKey>,
+    onBack: () -> Unit,
+    analytics: PlatformAnalytics?,
+    modifier: Modifier = Modifier,
+    decorateEntries: @Composable () -> List<NavEntry<NavKey>>,
+) {
+    // Root captured at first composition; a stale entry back handler can drain the stack mid-transition
+    // and NavDisplay rejects an empty backstack (fatal in the field), so self-heal back to the root.
+    val fallbackRoot = remember(backStack) { backStack.firstOrNull() }
+    if (backStack.isEmpty() && fallbackRoot != null) {
+        Logger.e { "Backstack self-healed to root (NavDisplay): root=${fallbackRoot::class.simpleName}" }
+        backStack.add(fallbackRoot)
+    }
+
+    // Track the top-of-backstack destination as a RUM view. Datadog's dd-sdk-android-compose
+    // NavigationViewTrackingEffect only supports Jetpack Navigation, so Nav3 is wired manually here.
+    // No-op when [analytics] is null (fdroid/desktop hosts and the intro flow pass nothing).
+    if (analytics != null) {
+        val currentKey = backStack.lastOrNull()
+        val tracker = remember(analytics) { ScreenViewTracker(analytics) }
+        LaunchedEffect(currentKey, tracker) { tracker.onCurrentKeyChanged(currentKey) }
+        DisposableEffect(tracker) { onDispose { tracker.dispose() } }
+    }
+
+    val entries = decorateEntries()
+
+    val listDetailSceneStrategy =
+        rememberListDetailSceneStrategy<NavKey>(
+            paneExpansionState = rememberPaneExpansionState(),
+            paneExpansionDragHandle = { state -> PaneExpansionDragHandle(state) },
+        )
+
+    // Fades are alpha, not movement, so they follow the theme's effects spec rather than a spatial one.
+    val fadeSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+
+    // No screen declares shared elements; NavDisplay itself uses this scope to animate an entry that moves between
+    // scenes, such as a detail going from a single pane to the list-detail split on resize.
+    SharedTransitionLayout {
+        NavDisplay(
+            entries = entries,
+            onBack = onBack,
+            // NavDisplay falls back to SinglePaneSceneStrategy automatically when this computes no Scene.
+            sceneStrategies = listOf(listDetailSceneStrategy),
+            sharedTransitionScope = this@SharedTransitionLayout,
+            transitionSpec = meshtasticTransitionSpec(fadeSpec),
+            popTransitionSpec = meshtasticTransitionSpec(fadeSpec),
+            predictivePopTransitionSpec = meshtasticPredictivePopTransitionSpec(fadeSpec),
+            modifier = modifier,
+        )
+    }
+}
+
+/** Drag handle for the list-detail scene strategy, with a 48.dp touch-target floor. */
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
+@Composable
+private fun ThreePaneScaffoldScope.PaneExpansionDragHandle(state: PaneExpansionState) {
+    val interactionSource = remember { MutableInteractionSource() }
+    VerticalDragHandle(
+        modifier =
+        Modifier.paneExpansionDraggable(
+            state = state,
+            minTouchTargetSize = 48.dp,
+            interactionSource = interactionSource,
+        ),
+        interactionSource = interactionSource,
+    )
+}
+
+internal class ScreenViewTracker(private val analytics: PlatformAnalytics) {
+    private var activeName: String? = null
+
+    fun onCurrentKeyChanged(currentKey: NavKey?) {
+        val name = currentKey?.rumViewName()
+        if (name == activeName) return
+        activeName?.let { analytics.stopScreenView(key = it) }
+        activeName = name
+        if (name != null) analytics.startScreenView(key = name, name = name)
+    }
+
+    fun dispose() {
+        activeName?.let { analytics.stopScreenView(key = it) }
+        activeName = null
+    }
+}
+
+/** Shared crossfade [ContentTransform] used for both forward and pop navigation. */
+private fun meshtasticTransitionSpec(
+    fadeSpec: FiniteAnimationSpec<Float>,
+): AnimatedContentTransitionScope<Scene<NavKey>>.() -> ContentTransform = {
+    ContentTransform(fadeIn(animationSpec = fadeSpec), fadeOut(animationSpec = fadeSpec))
+}
+
+/** Crossfade transition for predictive back gestures (Android 14+). */
+private fun meshtasticPredictivePopTransitionSpec(
+    fadeSpec: FiniteAnimationSpec<Float>,
+): AnimatedContentTransitionScope<Scene<NavKey>>.(Int) -> ContentTransform = {
+    ContentTransform(fadeIn(animationSpec = fadeSpec), fadeOut(animationSpec = fadeSpec))
+}

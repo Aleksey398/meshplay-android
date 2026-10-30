@@ -1,0 +1,50 @@
+---
+title: Help & In-App Docs
+nav_order: 21
+last_updated: 2026-10-21
+description: Browse this documentation inside the app, search it, and ask Chirpy — the on-device AI assistant — questions about Meshtastic.
+aliases:
+  - help
+  - docs-browser
+  - chirpy
+  - assistant
+---
+
+# Help & In-App Docs
+
+This same user documentation ships **inside the app**, so you can read it offline without leaving Meshtastic. Open it from **Settings → Help & Documentation**.
+
+## Browsing
+
+The docs browser lists every user-guide page. Tap a page to read it; images and cross-links work as they do here.
+
+![In-app documentation browser table of contents](../../assets/screenshots/docs-browser_toc.png)
+
+### Search
+
+Tap the search field at the top of the docs browser to open a full-screen search view. Type to filter pages by title and keywords — results update as you type, under the same field. The back arrow, or the keyboard's search action, closes the view. The field hides while you scroll down the page list and comes back when you scroll up.
+
+![Searching the in-app documentation](../../assets/screenshots/docs-browser_search.png)
+
+A page open in the browser:
+
+![A documentation page rendered in the app](../../assets/screenshots/docs-browser_page.png)
+
+### Pages in your language
+
+With the app set to a language other than English, a page that has a community translation opens in that language, labeled **Community translated** under its title. On the Google-flavor Android build, a page with no community translation opens in English and is then machine-translated on the phone, labeled **Auto-translated**. F-Droid and desktop builds show such a page in English.
+
+## Chirpy — the AI Assistant
+
+**Chirpy** answers plain-language questions about Meshtastic using this bundled documentation as its source. Tap the Chirpy button in the docs browser, type a question, and it replies with an answer and links to the relevant pages.
+
+![Chirpy AI assistant answering a question with page links](../../assets/screenshots/docs-browser_chirpy.png)
+
+Chirpy is Google-flavor Android only. On F-Droid and desktop builds the assistant button does not appear at all — the same is true on a phone whose hardware cannot run the on-device model. Browsing and the docs browser's own search work normally on every platform.
+
+> 🔒 **Privacy:** On supported phones running the Google-flavor build, Chirpy runs **on-device** using Gemini Nano — your questions never leave your phone. A small model downloads on first use.
+
+## Related Topics
+
+- [Translate the App](translate) — how these pages get localized into other languages
+- [App Functions](app-functions) — the separate system-AI integration (distinct from Chirpy)

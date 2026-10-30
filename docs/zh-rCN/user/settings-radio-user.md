@@ -1,0 +1,290 @@
+---
+title: Settings — Radio & User
+nav_order: 7
+last_updated: 2026-10-24
+description: Configure your node hardware, LoRa presets, user profile, position sharing, power management, and security.
+aliases:
+  - 设置
+  - radio-config
+  - user-config
+  - lora
+---
+
+# Settings — Radio & User
+
+Configure your node's user identity, region and LoRa parameters, position and power behavior, network and Bluetooth connectivity, and security settings.
+
+## How these screens work
+
+Everything here is on the **Settings** screen. **User**, **LoRa**, **Channels** and **Security** are
+listed there directly, under **Configuration**. **Device**, **Position**, **Power**, **Network**,
+**Display** and **Bluetooth** are one level down, under **Settings → Device configuration**.
+**Network** appears only on nodes with Wi-Fi or Ethernet, and **Bluetooth** only on nodes with Bluetooth.
+
+The **Search settings** field at the top of the **Settings** screen finds a setting by its name, its
+description, or a related term such as _ttl_ for **Hop Limit**. Choosing a result opens the screen
+that holds the setting, scrolls to it, and highlights it for a moment. While you administer a
+remote node, the results leave out this phone's own app settings.
+
+With no node connected, the screens still open and show the settings last read from your own node,
+under the line _Connect to a radio to change these settings._ The controls stay disabled until a
+node connects.
+
+Settings use standard preference controls — dropdowns, toggles, and sliders:
+
+| Control  | Screenshot                                                                                                  |
+| -------- | ----------------------------------------------------------------------------------------------------------- |
+| Dropdown | ![A dropdown setting, expanded to show its list of options](../../assets/screenshots/settings_dropdown.png) |
+| Toggle   | ![A toggle setting in the on position](../../assets/screenshots/settings_switch.png)                        |
+| Slider   | ![A slider setting with its current numeric value shown](../../assets/screenshots/settings_slider.png)      |
+
+## 用户设置
+
+### User Profile
+
+On **Settings → User**. The screen also shows the read-only **Node ID** and **Hardware model**.
+
+| Setting      | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 默认                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| 业余无线电模式（Ham） | Turn on if you hold an amateur radio license. Turning it on is staged behind a confirmation dialog, because licensed mode removes the channel encryption keys and sends all traffic as plaintext. On your own node it then relabels **Long Name** as **Call sign** (up to 7 characters) and adds a separate, optional **Long Name** that is appended to the call sign. Over remote admin the field stays **Long Name** | 关闭                  |
+| 长名称          | The name your node broadcasts. Up to 24 bytes on firmware 2.8 or newer, and 39 on older firmware. To rename another node only on this device, see [Display names](nodes#display-names)                                                                                                                                                                                                                                                    | Set by the firmware |
+| 短名称          | Up to four characters                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Set by the firmware |
+| 状态消息         | A short, public free-text status other nodes display alongside your node, up to 80 bytes, cleared with the **✕** in the field. The node broadcasts it to the mesh when you change it and again every 12 hours. Needs firmware 2.7.20 or newer, and is absent otherwise                                                                                                                                                    | 空                   |
+| 无法发送消息       | Marks the node as unmonitored or infrastructure, one nobody should try to message. This app shows it with an icon in the node list. Firmware 2.6.9 or newer is needed to change it                                                                                                                                                                                                                                        | 关闭                  |
+
+### Applying changes
+
+The footer appears as soon as you change something. **Discard** throws the change away, and the other button writes it to the node: it reads **Save & restart** on the screens the firmware applies with a reboot — Position, Network, Bluetooth, Security, and most module screens — and **Save** everywhere else.
+
+The status message is saved with the same **Save**, but it never reboots the node — and, like the
+rest of this screen, it can be edited on a remote node you administer. For your own node there is a
+shortcut while it is connected: touch & hold your node in the [node list](nodes.md) and choose
+**Update status**. Older firmware and a disconnected node have no shortcut — the field itself is
+still the way in.
+
+## 设备配置
+
+On **Settings → Device configuration → Device**. These settings set the node's role on the mesh and its local hardware behavior.
+
+| Setting                   | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                               | 默认                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| Button GPIO / Buzzer GPIO | Advanced: which pins the user button and the PWM buzzer are wired to                                                                                                                                                                                                                                                                                                                                                             | 0 (board default) |
+| 设备角色                      | Node behavior: **Client**, **Client Mute**, **Client Hidden**, **Client Base**, **Router**, **Router Late**, **Tracker**, **Sensor**, **TAK**, **TAK Tracker**, or **Lost and Found**. The description of the selected role appears under the field. Choosing **Router** or **Router Late** opens a dialog where you confirm you have read the device-role guidance before **Accept** is enabled | 客户端                                  |
+| Disable LED Heartbeat     | Controls the blinking status LED. Despite the label, the switch is on while the LED blinks                                                                                                                                                                                                                                                                                                                                       | On (LED blinks)   |
+| 双击作为按钮                    | Treat a double tap on a supported accelerometer as a button press                                                                                                                                                                                                                                                                                                                                                                                | 关闭                                   |
+| 节点信息广播间隔                  | How often the node re-announces itself. A dropdown of fixed intervals: **Unset**, then 3 to 72 hours                                                                                                                                                                                                                                                                                                             | 3 hours                              |
+| 转播模式                      | Which packets the node relays: **All**, **All Skip Decoding**, **Local Only**, **Known Only**, **None**, or **Core Portnums Only**. The description of the selected mode appears under the field. **None** isn't allowed with the Router roles                                                                                                                                                   | 全部                                   |
+| 时区                        | POSIX time-zone string for dates on the node's screen and in its log. **Use phone time zone** fills it from this phone, and the **✕** clears it                                                                                                                                                                                                                                                                                  | 空                                    |
+| 快速按3下 向所有节点发送紧急广播         | Send a position on the primary channel when the user button is triple-clicked                                                                                                                                                                                                                                                                                                                                                                    | On                                   |
+
+## LoRa 配置
+
+On **Settings → LoRa**. These settings decide where and how the node transmits. Region, preset and the manual modem settings are on the **Options** card. The rest are on **Advanced**.
+
+> ⚠️ **Important:** Operating without the correct region may violate local radio regulations. See the [region configuration guide](https://meshtastic.org/docs/getting-started/initial-config) on meshtastic.org for details.
+
+| Setting                            | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | 默认                                                                                                                                                 |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bandwidth (kHz) | Manual mode only: the channel bandwidth in kHz, typed in directly. On the 2.4 GHz region the app offers a list of the bandwidths your node supports instead, headed by **Default (812.5 kHz)**. A stored value that isn't on that list shows as _Unsupported_ and blocks saving until you pick a supported one                                                                                                                                     | From preset                                                                                                                                        |
+| 编码率                                | Manual mode only: 5 to 8, the denominator of 4/n. More redundancy costs airtime                                                                                                                                                                                                                                                                                                                                                                                                                                       | From preset                                                                                                                                        |
+| Coding Rate Override               | Preset mode only, firmware 2.7.18 or newer: raises the preset's coding rate for more error correction while keeping its bandwidth and spread factor. Only rates above the preset's own are offered, and a preset already at 4/8 has none. Nodes on the same preset still hear each other, but every packet takes longer on air and uses more of the duty cycle. Switching to a preset that already meets the override resets it to the preset default | Preset default                                                                                                                                     |
+| 频率覆盖                               | Overrides the computed operating frequency outright, in MHz. It doesn't offset the calculated value. While it is 0 the field shows the computed frequency with **Auto** beside it                                                                                                                                                                                                                                                                                                                                     | 0 (use calculated)                                                                                                              |
+| 频率时隙                               | Which slot within the region's band to use. At 0 the region picks the slot, usually from the primary channel name, and the field shows that slot with **Auto** beside it                                                                                                                                                                                                                                                                                                                                                              | 0 (automatic)                                                                                                                   |
+| 节点数                                | How many times a message may be repeated before it stops being forwarded, 0 to 7                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 3                                                                                                                                                  |
+| 忽略 MQTT                            | Drop packets that arrived from MQTT rather than over the air. The firmware turns this on for you whenever you set a region that has a duty-cycle limit — the EU bands, Thailand, and Ukraine 433                                                                                                                                                                                                                                                                                                                                      | Off, until you set a duty-cycle-limited region                                                                                                     |
+| 使用MQTT                             | Allow your packets to be forwarded to MQTT by gateways                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | 关闭                                                                                                                                                 |
+| 覆盖占空比                              | Ignores the region's duty-cycle limit. Illegal in most regions; turn it on only where your license permits                                                                                                                                                                                                                                                                                                                                                                                                                            | 关闭                                                                                                                                                 |
+| PA风扇已禁用                            | Turn off the power-amplifier fan. Shown only on hardware that has one                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 关闭                                                                                                                                                 |
+| 预设                                 | Speed and range tradeoff, listed by full name such as **Long Range - Fast**. See [Modem presets](#modem-presets)                                                                                                                                                                                                                                                                                                                                                                                                                      | Long Fast. When a node on firmware 2.8 or newer is first set to the United States region, the app picks Long Turbo |
+| 区域                                 | Regulatory region for frequency bands. You must set this before transmitting. On firmware 2.8 or newer, the first region set also creates the node's identity key and gives it a new node number                                                                                                                                                                                                                                                                                                      | Unset (must configure)                                                                                                          |
+| RX 增益                              | Extra receive gain on SX126x radios; costs a little current                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | On                                                                                                                                                 |
+| 扩散因子                               | Manual mode only: 5 to 12. Higher spreads further but slower. On SX127x (RF95) radios the firmware doesn't accept 5 or 6 and uses 11 instead                                                                                                                                                                                                                                                                                                                                       | From preset                                                                                                                                        |
+| 启用传输                               | Turning this off makes the node receive-only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | On                                                                                                                                                 |
+| 发送强度                               | In dBm. 0 uses the highest power legal for the region, which suits most nodes                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 0 (region max)                                                                                                                  |
+| 使用预设                               | Turn it off to set **Spread Factor**, **Coding Rate** and **Bandwidth** by hand instead of taking them from the modem preset                                                                                                                                                                                                                                                                                                                                                                                                                          | On                                                                                                                                                 |
+
+The preset list is also filtered to what your region legally permits, so a preset allowed in one
+region doesn't appear in another. Changing region can therefore leave your current preset
+illegal — the app repairs it for you, switching to the region's own default rather than leaving an
+unusable setting in place. The region list itself is filtered by what your firmware supports, so
+the regions added in 2.8 appear only on 2.8 or later, alongside whichever region the node already has set.
+
+Some regions are amateur radio allocations whose presets only licensed operators may use. On firmware 2.8 or newer the app knows which regions those are and grays the whole **Presets** list out until **Licensed amateur radio (Ham)** is turned on for the node you are configuring; the text under the field says so while it is grayed out.
+
+### Modem presets
+
+The Lite, Narrow, Medium Turbo, and Tiny presets need firmware 2.8 or newer — the app hides them on older nodes.
+
+This table uses the short names. The **Presets** dropdown spells each one out, such as **Long Range - Fast**, **Short Range - Turbo** and **Lite - Slow**.
+
+The **SNR Limit** values are negative on purpose. LoRa can decode signals _below_ the noise floor, so a more-negative limit means the preset tolerates a weaker, noisier signal (more range). See [How the Signal Meter Works](signal-meter) for the full explanation.
+
+| Preset         | Range                   | 速度                        | SNR Limit                | Best For                                                                                                                                                                                                      |
+| -------------- | ----------------------- | ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Short Turbo    | ~1 km   | 21.9 kbps | −7.5 dB  | Dense urban with line-of-sight; data-heavy applications                                                                                                                                                       |
+| Short Fast     | ~3 km   | 10.9 kbps | −7.5 dB  | Urban neighborhoods; buildings within a few blocks                                                                                                                                                            |
+| Short Slow     | ~5 km   | 6.25 kbps | −10 dB                   | Suburban short-range; moderate building density                                                                                                                                                               |
+| Medium Fast    | ~5 km   | 3.52 kbps | −12.5 dB | Suburban areas; moderate building density                                                                                                                                                                     |
+| Medium Slow    | ~8 km   | 1.95 kbps | −15 dB                   | Suburban/rural; moderate range with slower speed                                                                                                                                                              |
+| Long Turbo     | ~10 km  | 1.34 kbps | −17.5 dB | Similar range to Long Fast but with 500 kHz bandwidth; faster throughput                                                                                                                                      |
+| Long Fast      | ~10 km  | 1.1 kbps  | −17.5 dB | **General use (default)** — balanced range and speed                                                                                                                                       |
+| Long Moderate  | ~20 km  | 0.34 kbps | −17.5 dB | Rural with some terrain; occasional use                                                                                                                                                                       |
+| Lite Fast      | ~5 km   | 1.76 kbps | −12.5 dB | EU 866 MHz SRD band (125 kHz BW); comparable to Medium Fast                                                                                                                                |
+| Lite Slow      | ~10 km  | 0.98 kbps | −15 dB                   | EU 866 MHz SRD band (125 kHz BW); comparable to Long Fast                                                                                                                                  |
+| Narrow Fast    | ~5 km   | 2.28 kbps | −7.5 dB  | EU 868 MHz band (62.5 kHz BW); avoids interference with other devices                                                                                                      |
+| Narrow Slow    | ~10 km  | 1.30 kbps | −10 dB                   | EU 868 MHz band (62.5 kHz BW); comparable to Long Fast                                                                                                                     |
+| Medium Turbo   | ~5 km   | 7.0 kbps  | −12.5 dB | Like Medium Fast but with 500 kHz bandwidth; not legal in every region. Needs firmware 2.8 or newer                                                                           |
+| Tiny Fast      | ~10 km  | 0.68 kbps | −7.5 dB  | Amateur bands that cap occupied bandwidth; these presets use 15.6 kHz. Needs firmware 2.8 or newer, an SX126x or SX127x radio, and a TCXO of ±5 ppm or better |
+| Tiny Slow      | ~20 km  | 0.33 kbps | −10 dB                   | Same band restrictions as Tiny Fast, longer range. Same firmware, node, and TCXO requirements                                                                                                 |
+| Long Slow      | ~30 km  | 0.18 kbps | −20 dB                   | Deprecated. Still selectable, but may be removed in a future firmware release                                                                                                                 |
+| Very Long Slow | ~40+ km | 0.09 kbps | −20 dB                   | Deprecated. Firmware 2.6.5 and newer no longer support it                                                                                                     |
+
+#### Choosing a modem preset
+
+The modem preset controls the fundamental tradeoff between **range** and **data rate**:
+
+- **Slower presets** use more spreading, making signals decodable at weaker signal levels (lower SNR limit). This means longer range but fewer bytes per second.
+- **Faster presets** pack more data per transmission but require a stronger signal to decode.
+
+**Practical guidance:**
+
+- **Urban mesh (many nodes, short distances):** Use **Long Fast** (default) or **Short Fast**. Higher speed means less airtime congestion when many nodes share the channel.
+- **Rural/sparse mesh (few nodes, long distances):** Use **Long Moderate**. Range matters more than speed when nodes are far apart.
+- **EU 866/868 MHz regulatory compliance:** Use **Lite Fast**, **Lite Slow**, **Narrow Fast**, or **Narrow Slow** — these are optimized for the EU SRD/868 MHz bands with narrower bandwidths.
+- **Fixed infrastructure links:** Use **Short Turbo** or **Long Turbo** for dedicated point-to-point links with good antennas and line-of-sight.
+- **Mixed environments:** Stick with **Long Fast** — it's the community default and ensures compatibility with others in your area.
+
+All nodes on the same channel must use the same modem preset. Nodes with mismatched presets can't communicate even if they share the same frequency and encryption key.
+
+The range estimates in the [Modem Presets](#modem-presets) table assume flat terrain and modest antennas. Elevation advantage (hilltop, rooftop) dramatically increases effective range. A well-placed Router with Long Fast can often outperform a ground-level node with Long Slow.
+
+## 屏幕配置
+
+On **Settings → Device configuration → Display**. These control the **node's own screen**, not the app's.
+
+| Setting     | 说明                                                                                                                                                                             | 默认                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| 使用 12 小时制格式 | Show the node's clock as 12-hour rather than 24-hour                                                                                                                           | 关闭                                             |
+| 总是朝北        | Locks the compass rose north-up instead of rotating it with your heading. Independent of **Compass Orientation** — neither replaces the other                  | 关闭                                             |
+| 加粗标题        | Draw the screen's heading text in bold                                                                                                                                         | 关闭                                             |
+| 轮播间隔        | How often the node moves to its next screen on its own: **Unset** (never), or 15 seconds to 15 minutes                                      | 未设置                                            |
+| 罗盘方向        | Rotation offset for the compass rose: **0°**, **90°**, **180°** or **270°**, each with an **Inverted** variant                                                 | 0°                                             |
+| 显示模式        | Screen layout: **Default 128x64 screen layout**, **Optimized for 2 color displays**, **Inverted top bar for 2 color displays**, or **TFT Full Color Displays** | Default, or color on nodes with a color screen |
+| 显示单位        | **Metric** or **Imperial** on the node's screen                                                                                                                                | 公制                                             |
+| 翻转屏幕        | Flip the display for an inverted mounting                                                                                                                                      | 关闭                                             |
+| OLED 类型     | Overrides automatic OLED detection: **Detect Automatically**, **SSD1306**, **SH1106**, **SH1107**, **SH1107 128x128**, or **SH1107 Rotated**                   | Detect Automatically                           |
+| 开启屏幕        | How long the display stays lit after a button press or a received message: 15 seconds to 1 hour, or **Always On**                                              | 10 minutes                                     |
+| 点击或移动时唤醒屏幕  | Light the screen when the node is tapped or moved. Needs an accelerometer                                                                                      | 关闭                                             |
+
+## 定位配置
+
+On **Settings → Device configuration → Position**. These settings decide where the node's position comes from and how often it is shared.
+
+| Setting                                                | 说明                                                                                                                                                                     | 默认                                                                                                                      |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 广播间隔                                                   | The longest the node goes without broadcasting its position: **Unset**, or 1 minute to 72 hours                                                        | 1 小时                                                                                                                    |
+| 固定位置                                                   | Broadcast a manually entered **Latitude**, **Longitude** and **Altitude** instead of a live GPS fix. **Set from current phone location** fills them in | 关闭                                                                                                                      |
+| GPS Enable GPIO / GPS Receive GPIO / GPS Transmit GPIO | Advanced: the pins an add-on GPS module is wired to. Hidden on boards whose maker wired the GPS, unless a pin already holds a value    | 0                                                                                                                       |
+| GPS 模式 (物理硬件)                       | **Enabled**, **Disabled**, or **Not Present**. Hidden while **Fixed Position** is on                                                                   | Depends on the hardware                                                                                                 |
+| 自动距离大小                                                 | In meters. With **Smart Position** on, how far you must move before a broadcast is considered                                                          | 100 m                                                                                                                   |
+| 自动时间间隔                                                 | With **Smart Position** on, the shortest gap between broadcasts once the distance is met                                                                               | 5 minutes                                                                                                               |
+| 位置信息数据包                                                | A group of checkboxes choosing which fields ride along with a position, such as altitude, its reference and precision, satellites in view, and timestamp               | **Altitude**, **Altitude is Mean Sea Level**, **Vehicle speed**, **Vehicle heading**, **DOP**, **Number of satellites** |
+| 智能位置                                                   | Broadcast based on movement rather than purely on the clock                                                                                                            | On                                                                                                                      |
+| GPS 轮询间隔                                               | How often the node asks its GPS for a fix. Hidden while **Fixed Position** is on                                                                       | 2 minutes                                                                                                               |
+
+## 电源配置
+
+On **Settings → Device configuration → Power**. These settings trade battery life against availability.
+
+| Setting                               | 说明                                                                                                                                                                                         | 默认         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| ADC 倍数覆盖                              | Turn on a manual correction for battery-voltage readings                                                                                                                                   | 关闭         |
+| ADC乘数修正比率                             | The correction factor itself, shown only while the override is on                                                                                                                          | —          |
+| 电池INA_2XX I2C 地址 | Address of an external INA-series power sensor, if fitted                                                                                                                                  | 0          |
+| 最小唤醒时间                                | The shortest time the node stays awake once woken                                                                                                                                          | 10 seconds |
+| 启用节能模式                                | Sleep as much as possible. On the Tracker and Sensor roles this includes the LoRa radio. Not for a node you use with the app, or one without a user button | 关闭         |
+| 断电时关机                                 | How long after external power is removed before the node powers off. **Unset** disables it, and values under 30 seconds are raised to 30                                   | 未设置        |
+| 深度睡眠时间                                | How long the deepest sleep state lasts                                                                                                                                                     | —          |
+| 等待蓝牙持续时间                              | How long to wait for a phone to connect before sleeping                                                                                                                                    | 1 minute   |
+
+## 网络配置
+
+On **Settings → Device configuration → Network**, on nodes with Wi-Fi or Ethernet. When the node is
+on a network, a **Current connections:** card at the top shows its **Wi-Fi IP:** or **Ethernet IP:**.
+
+> ⚠️ **Warning:** Turning on **WiFi Enabled** or **Ethernet Enabled** ends the Bluetooth connection between your phone and the node. Reconnect over the network afterwards from the [Connections](connections) screen, or turn Wi-Fi off again from the node's own screen or over USB. Saving this screen also always reboots the node.
+
+| Setting                     | 说明                                                                                                                                                                                                                                                                                                                                                             | 默认                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| IPv4模式                      | **DHCP**, or **Static** with the four address fields that follow                                                                                                                                                                                                                                                                                               | DHCP                      |
+| 启用以太网                       | Use a wired connection. Shown only on hardware that has Ethernet                                                                                                                                                                                                                                                                               | 关闭                        |
+| IP / Gateway / Subnet / DNS | The static address, shown only when **Address Mode** is **Static**                                                                                                                                                                                                                                                                                             | —                         |
+| NTP 服务器                     | Time synchronization server                                                                                                                                                                                                                                                                                                                                    | `meshtastic.pool.ntp.org` |
+| 密码                          | Network password. Appears only once **WiFi Enabled** is on                                                                                                                                                                                                                                                                                     | —                         |
+| rsyslog 服务器                 | Remote logging server                                                                                                                                                                                                                                                                                                                                          | —                         |
+| SSID                        | Network name to connect to. Appears only once **WiFi Enabled** is on. **Scan Wi-Fi QR code** fills it and **Password** from a standard Wi-Fi QR code; on Android, holding the phone against a Wi-Fi NFC tag while this screen is open fills them the same way, and the app offers to open system settings if NFC is turned off | —                         |
+| UDP 广播                      | Share mesh traffic with other nodes over the local network                                                                                                                                                                                                                                                                                                     | 关闭                        |
+| WiFi Enabled                | Connect the node to Wi-Fi                                                                                                                                                                                                                                                                                                                                      | 关闭                        |
+
+![Network Config with a static IPv4 address entered](../../assets/screenshots/settings_ipv4_field.png)
+
+## 蓝牙配置
+
+On **Settings → Device configuration → Bluetooth**, on nodes with Bluetooth.
+
+| Setting  | 说明                                                                                                                            | 默认                                                                    |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 启用蓝牙     | Turn the node's Bluetooth on or off                                                                                           | On, except on some nodes with a color screen                          |
+| 固定 PIN 码 | PIN code for pairing, used with `FIXED_PIN`. Must be **exactly six digits** — the field rejects anything else | 123456                                                                |
+| 配对模式     | Listed by firmware name: `RANDOM_PIN`, `FIXED_PIN`, or `NO_PIN`                                               | `RANDOM_PIN` on nodes with a screen, `FIXED_PIN` on nodes without one |
+
+## 安全配置
+
+On **Settings → Security**. The screen is grouped into cards: **Packet authenticity**, **Direct Message Key** (your node's key pair), **Admin Keys**, **Logs**, and **Administration**.
+
+| Setting    | 说明                                                                                                                                                                                                                                                             | 默认                           |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| 管理员密钥      | Public keys permitted to administer this node remotely, up to three                                                                                                                                                                                            | 无                            |
+| 备份密钥       | Save an encrypted backup of the node's keys on this phone. Only for your own node, and not in the desktop app                                                                                                                                  | —                            |
+| 启用调试日志 API | Output live debug logging over serial, and view and export position-redacted node logs over Bluetooth                                                                                                                                                          | 关闭                           |
+| 删除密钥备份     | Remove the stored key backup from this phone                                                                                                                                                                                                                   | —                            |
+| 管理模式       | Locks the whole Configuration list, not just channels — every setting on the node becomes read-only and only an admin can change anything. Only selectable once an **Admin Key** is set                                                        | 关闭                           |
+| 私钥         | Your node's private key (handle securely). Shown redacted when you are viewing another node over remote admin — the firmware doesn't send it                                                                                | Generated by the node        |
+| 安全等级       | How unsigned packets are treated: **Strict — Require authentication**, **Balanced — Prefer authenticated**, or **Compatible — Accept unsigned**. Needs firmware that supports packet signing; **Strict** asks for confirmation | Compatible                   |
+| 公钥         | Your node's public key (read-only)                                                                                                                                                                                                          | Derived from the private key |
+| 重新生成私钥     | Issues a new keypair for this node, behind a confirmation. Every peer that knew your old key must learn the new one                                                                                                                            | —                            |
+| 恢复密钥       | Write the backed-up keys back to the node (available once a backup exists)                                                                                                                                                                  | —                            |
+| 串口控制       | Serial console over the Stream API                                                                                                                                                                                                                             | On                           |
+
+### Lockdown Mode
+
+Lockdown encrypts the device's storage and requires a passphrase for each connection. It needs
+supporting firmware; the row doesn't appear otherwise.
+
+> ⚠️ **Warning:** There is no passphrase recovery. Losing it means erasing the device to get it
+> back, which destroys its keys, channels and settings.
+
+Enabling it asks you to set and confirm a passphrase, and to acknowledge that **it locks the debug
+(SWD) port on hardware where the lockout takes effect**. That part isn't reversible from the app.
+Turning lockdown off later decrypts your storage and reboots the device, but the port stays locked.
+Reopening it takes a full chip erase with a debug probe, which destroys everything on the device.
+
+Alongside the passphrase you set the limits that end a session automatically:
+
+| Field                        | What it does                                                                              |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| 剩余启动次数                       | How many device boots the unlocked state survives. Starts at 50           |
+| 距离失效还有多少小时                   | Wall-clock lifetime of the unlocked state                                                 |
+| 会话上限 (分钟) | A per-boot uptime cap on the unlocked state. 0, the default, means no cap |
+
+Once active, the row reads _Active — storage encrypted, this connection authenticated_ when
+unlocked, or _Active — enter your passphrase to unlock this connection_ when not. **Lock Now**
+ends the current session immediately. Repeated wrong passphrases are rate-limited with a
+back-off before you can try again.
+
+## Related Topics
+
+- [Settings — Modules & Admin](settings-module-admin) — optional feature modules and device administration
+- [Signal Meter](signal-meter) — how modem presets affect signal quality thresholds
+- [LoRa configuration](https://meshtastic.org/docs/configuration/radio/lora) — detailed LoRa settings reference on meshtastic.org
+- [Initial configuration](https://meshtastic.org/docs/getting-started/initial-config) — region setup guide on meshtastic.org

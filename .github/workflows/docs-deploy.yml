@@ -1,0 +1,104 @@
+name: Deploy Documentation
+
+# Publishes the main-branch docs to the persistent gh-pages branch: the site
+# snapshot at /main/ on pushes that touch a site input, and the Dokka reference
+# at /api/ on the daily schedule. A manual run rebuilds both. The site root and
+# /vX.Y.Z/ folders are owned by docs-release.yml and are left untouched.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'build-logic/convention/**/Docs*.kt'
+      - 'specs/20260507-161858-app-docs-markdown/contracts/keyword-index-schema.json'
+      - 'scripts/docs/**'
+      - '.ruby-version'
+      - '.github/workflows/docs-deploy.yml'
+
+  schedule:
+    - cron: '37 5 * * *'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Shares the group with docs-release.yml so gh-pages pushes serialize.
+# cancel-in-progress must stay false: a snapshot deploy must never cancel an
+# in-flight release publish (GitHub still coalesces queued runs to one).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'meshtastic/Meshtastic-Android'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      BUILD_SITE: ${{ github.event_name != 'schedule' }}
+      BUILD_API: ${{ github.event_name != 'push' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+          # Dokka runs commonizeNativeDistribution, which reads ~/.konan.
+          cache_konan: 'true'
+
+      - name: Setup Ruby
+        if: env.BUILD_SITE == 'true'
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        # With ruby-version unset this reads the root .ruby-version; the bundle is docs/Gemfile.
+        env:
+          BUNDLE_GEMFILE: docs/Gemfile
+        with:
+          bundler-cache: true
+
+      - name: Generate Docs Site (main channel)
+        if: env.BUILD_SITE == 'true'
+        run: ./gradlew generateDocsBundle validateDocsBundle publishDocsSite -Pdocs.channel=main -Pci=true
+
+      # Jekyll reads only the generated site and Dokka only the sources, so a run
+      # that builds both overlaps them.
+      - name: Build Jekyll and Dokka
+        run: |
+          set -euo pipefail
+          jekyll_pid=""
+          if [ "$BUILD_SITE" = "true" ]; then
+            BUNDLE_GEMFILE=docs/Gemfile bundle exec jekyll build \
+              --source build/_site/main \
+              --destination build/jekyll_site \
+              --baseurl "/${GITHUB_REPOSITORY#*/}/main" &
+            jekyll_pid=$!
+          fi
+          if [ "$BUILD_API" = "true" ]; then
+            ./gradlew :dokkaGeneratePublicationHtml
+          fi
+          if [ -n "$jekyll_pid" ]; then
+            wait "$jekyll_pid"
+          fi
+
+      - name: Stage channels
+        id: stage
+        run: |
+          set -euo pipefail
+          mkdir -p build/pages_staging
+          channels=""
+          if [ "$BUILD_SITE" = "true" ]; then
+            cp -r build/jekyll_site build/pages_staging/main
+            channels="main"
+          fi
+          if [ "$BUILD_API" = "true" ]; then
+            cp -r build/dokka/html build/pages_staging/api
+            channels="${channels:+$channels }api"
+          fi
+          echo "channels=$channels" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to gh-pages
+        run: scripts/docs/publish-to-gh-pages.sh build/pages_staging ${{ steps.stage.outputs.channels }}

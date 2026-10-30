@@ -1,0 +1,202 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.advanced
+import org.meshtastic.core.resources.ambient_lighting
+import org.meshtastic.core.resources.ambient_lighting_config
+import org.meshtastic.core.resources.schema_ambientlighting_blue
+import org.meshtastic.core.resources.schema_ambientlighting_blue_description
+import org.meshtastic.core.resources.schema_ambientlighting_current
+import org.meshtastic.core.resources.schema_ambientlighting_current_description
+import org.meshtastic.core.resources.schema_ambientlighting_green
+import org.meshtastic.core.resources.schema_ambientlighting_green_description
+import org.meshtastic.core.resources.schema_ambientlighting_led_state
+import org.meshtastic.core.resources.schema_ambientlighting_led_state_description
+import org.meshtastic.core.resources.schema_ambientlighting_red
+import org.meshtastic.core.resources.schema_ambientlighting_red_description
+import org.meshtastic.core.ui.component.RgbColorPicker
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.blue
+import org.meshtastic.proto.current
+import org.meshtastic.proto.green
+import org.meshtastic.proto.red
+
+@Composable
+fun AmbientLightingConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val ambientLightingConfig =
+        state.moduleConfig.ambient_lighting ?: ModuleConfig.AmbientLightingConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = ambientLightingConfig)
+    val focusManager = LocalFocusManager.current
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.ambient_lighting),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = ModuleConfig.Builder().also { wb -> wb.ambient_lighting = it }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ModuleRoute.AMBIENT_LIGHTING.route)) {
+            TitledCard(title = stringResource(Res.string.ambient_lighting_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_ambientlighting_led_state),
+                    modifier = Modifier.settingsField(Res.string.schema_ambientlighting_led_state),
+                    summary = stringResource(Res.string.schema_ambientlighting_led_state_description),
+                    checked = formState.value.led_state,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.led_state = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                LedColorFields(
+                    config = formState.value,
+                    enabled = state.connected,
+                    focusManager = focusManager,
+                    onConfigChange = { formState.value = it },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LedColorFields(
+    config: ModuleConfig.AmbientLightingConfig,
+    enabled: Boolean,
+    focusManager: FocusManager,
+    onConfigChange: (ModuleConfig.AmbientLightingConfig) -> Unit,
+) {
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+    Column {
+        BoundedIntEditTextPreference(
+            title = stringResource(Res.string.schema_ambientlighting_current),
+            modifier = Modifier.settingsField(Res.string.schema_ambientlighting_current),
+            summary = stringResource(Res.string.schema_ambientlighting_current_description),
+            value = config.current,
+            metadata = ModuleConfig.AmbientLightingConfig.current,
+            enabled = enabled,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChange = { onConfigChange(config.newBuilder().also { wb -> wb.current = it }.build()) },
+        )
+        RgbColorPicker(
+            red = config.red,
+            green = config.green,
+            blue = config.blue,
+            redLabel = stringResource(Res.string.schema_ambientlighting_red),
+            greenLabel = stringResource(Res.string.schema_ambientlighting_green),
+            blueLabel = stringResource(Res.string.schema_ambientlighting_blue),
+            modifier =
+            Modifier.settingsField(
+                Res.string.schema_ambientlighting_red,
+                Res.string.schema_ambientlighting_green,
+                Res.string.schema_ambientlighting_blue,
+            ),
+            enabled = enabled,
+            onColorChange = { r, g, b ->
+                onConfigChange(
+                    config
+                        .newBuilder()
+                        .also { wb ->
+                            wb.red = r
+                            wb.green = g
+                            wb.blue = b
+                        }
+                        .build(),
+                )
+            },
+        )
+        TextButton(onClick = { showAdvanced = !showAdvanced }, modifier = Modifier.padding(horizontal = 8.dp)) {
+            Text(stringResource(Res.string.advanced))
+        }
+        if (showAdvanced) {
+            LedColorNumberFields(config, enabled, focusManager, onConfigChange)
+        }
+    }
+}
+
+@Composable
+private fun LedColorNumberFields(
+    config: ModuleConfig.AmbientLightingConfig,
+    enabled: Boolean,
+    focusManager: FocusManager,
+    onConfigChange: (ModuleConfig.AmbientLightingConfig) -> Unit,
+) {
+    Column {
+        BoundedIntEditTextPreference(
+            title = stringResource(Res.string.schema_ambientlighting_red),
+            summary = stringResource(Res.string.schema_ambientlighting_red_description),
+            value = config.red,
+            metadata = ModuleConfig.AmbientLightingConfig.red,
+            enabled = enabled,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChange = { onConfigChange(config.newBuilder().also { wb -> wb.red = it }.build()) },
+        )
+        BoundedIntEditTextPreference(
+            title = stringResource(Res.string.schema_ambientlighting_green),
+            summary = stringResource(Res.string.schema_ambientlighting_green_description),
+            value = config.green,
+            metadata = ModuleConfig.AmbientLightingConfig.green,
+            enabled = enabled,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChange = { onConfigChange(config.newBuilder().also { wb -> wb.green = it }.build()) },
+        )
+        BoundedIntEditTextPreference(
+            title = stringResource(Res.string.schema_ambientlighting_blue),
+            summary = stringResource(Res.string.schema_ambientlighting_blue_description),
+            value = config.blue,
+            metadata = ModuleConfig.AmbientLightingConfig.blue,
+            enabled = enabled,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChange = { onConfigChange(config.newBuilder().also { wb -> wb.blue = it }.build()) },
+        )
+    }
+}

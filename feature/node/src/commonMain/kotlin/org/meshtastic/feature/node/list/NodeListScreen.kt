@@ -1,0 +1,554 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.node.list
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.animateFloatingActionButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.model.ConnectionState
+import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.NodeListDensity
+import org.meshtastic.core.model.excludes
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.channel_invalid
+import org.meshtastic.core.resources.hop_histogram_title
+import org.meshtastic.core.resources.node_list_help_title
+import org.meshtastic.core.resources.nodes
+import org.meshtastic.core.resources.nodes_empty_disconnected_hint
+import org.meshtastic.core.resources.nodes_empty_disconnected_title
+import org.meshtastic.core.resources.nodes_empty_searching_hint
+import org.meshtastic.core.resources.nodes_empty_searching_title
+import org.meshtastic.core.resources.nodes_unheard_banner
+import org.meshtastic.core.resources.nodes_unheard_banner_one
+import org.meshtastic.core.resources.nodes_unheard_keep
+import org.meshtastic.core.resources.nodes_unheard_remove
+import org.meshtastic.core.resources.set_up_connection
+import org.meshtastic.core.ui.component.EmptyState
+import org.meshtastic.core.ui.component.ListScrollbar
+import org.meshtastic.core.ui.component.MainAppBar
+import org.meshtastic.core.ui.component.MeshtasticImportFAB
+import org.meshtastic.core.ui.component.NodeItem
+import org.meshtastic.core.ui.component.NodeItemCompact
+import org.meshtastic.core.ui.component.ScrollToTopEvent
+import org.meshtastic.core.ui.component.ShareContactDialog
+import org.meshtastic.core.ui.component.smartScrollToTop
+import org.meshtastic.core.ui.icon.BarChart
+import org.meshtastic.core.ui.icon.Info
+import org.meshtastic.core.ui.icon.MeshtasticIcons
+import org.meshtastic.core.ui.icon.NoDevice
+import org.meshtastic.core.ui.icon.Nodes
+import org.meshtastic.core.ui.icon.SignalOff
+import org.meshtastic.core.ui.theme.StatusColors.StatusOrange
+import org.meshtastic.core.ui.util.parseDeepLinkOrInvalid
+import org.meshtastic.feature.node.component.DisplayNameDialog
+import org.meshtastic.feature.node.component.LocalNodeContextMenu
+import org.meshtastic.feature.node.component.NodeContextMenu
+import org.meshtastic.feature.node.component.NodeCountSummary
+import org.meshtastic.feature.node.component.NodeFilterSearchBar
+import org.meshtastic.feature.node.component.NodeFilterToggles
+import org.meshtastic.feature.node.component.NodeHopHistogramSheet
+import org.meshtastic.feature.node.component.NodeListHelp
+import org.meshtastic.proto.ExcludedModules
+
+internal fun ownNodeMenuItems(node: Node, ourNode: Node?, connectionState: ConnectionState): OwnNodeMenuItems {
+    val connected = node.num == ourNode?.num && connectionState == ConnectionState.Connected
+    return OwnNodeMenuItems(
+        updateStatus = canEditStatusMessage(node, ourNode, connectionState),
+        editName = connected,
+        shareContact = connected && ourNode.capabilities.supportsQrCodeSharing,
+    )
+}
+
+/**
+ * design#115: status message editing is offered on the connected local node only, and only where the firmware has the
+ * module — absent, never disabled, everywhere else.
+ */
+internal fun canEditStatusMessage(node: Node, ourNode: Node?, connectionState: ConnectionState): Boolean =
+    node.num == ourNode?.num &&
+        connectionState == ConnectionState.Connected &&
+        node.capabilities.supportsStatusMessage &&
+        !node.metadata.excludes(ExcludedModules.STATUSMESSAGE_CONFIG)
+
+/** Which actions our own node's long-press menu offers; the menu opens only when [any] is true. */
+internal data class OwnNodeMenuItems(val updateStatus: Boolean, val editName: Boolean, val shareContact: Boolean) {
+    val any: Boolean
+        get() = updateStatus || editName || shareContact
+}
+
+@Suppress("LongMethod", "CyclomaticComplexMethod")
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun NodeListScreen(
+    navigateToNodeDetails: (Int) -> Unit,
+    viewModel: NodeListViewModel,
+    modifier: Modifier = Modifier,
+    navigateToMessages: (String) -> Unit = {},
+    scrollToTopEvents: Flow<ScrollToTopEvent>? = null,
+    activeNodeId: Int? = null,
+    onHandleDeepLink: (org.meshtastic.core.common.util.CommonUri, onInvalid: () -> Unit) -> Unit = { _, _ -> },
+    onNavigateToConnections: () -> Unit = {},
+    onEditStatusMessage: () -> Unit = {},
+    navigateToMeshView: (Int) -> Unit = {},
+    navigateToCompass: (Int) -> Unit = {},
+    onEditName: () -> Unit = {},
+) {
+    val showToast = org.meshtastic.core.ui.util.rememberShowToastResource()
+    val scope = rememberCoroutineScope()
+    val state by viewModel.nodesUiState.collectAsStateWithLifecycle()
+    val lastTracerouteTime by viewModel.lastTracerouteTime.collectAsStateWithLifecycle()
+
+    // Dedup by num: it's the LazyColumn key (must be unique) but the upstream flow can momentarily emit
+    // two entries with the same num (a num=0 unknown-node placeholder, or a brief double-emission during
+    // an active-DB switch). Dedup once here so the count in the app bar and the rendered rows agree.
+    // Composite "num_index" keys would also fix the crash but break animateItem() reorder animations.
+    val allNodes by viewModel.nodeList.collectAsStateWithLifecycle()
+    val nodes = remember(allNodes) { allNodes.distinctBy { it.num } }
+    val ourNode by viewModel.ourNodeInfo.collectAsStateWithLifecycle()
+    val onlineNodeCount by viewModel.onlineNodeCount.collectAsStateWithLifecycle(0)
+    val totalNodeCount by viewModel.totalNodeCount.collectAsStateWithLifecycle(0)
+    val unfilteredNodes by viewModel.unfilteredNodeList.collectAsStateWithLifecycle()
+    val unheardNodes by viewModel.unheardBannerNodes.collectAsStateWithLifecycle()
+    val deviceImageUrls by viewModel.deviceImageUrls.collectAsStateWithLifecycle()
+    val ignoredNodeCount = unfilteredNodes.count { it.isIgnored }
+
+    // No cache window here: this pane renders inside ThreePaneScaffold's LookaheadScope, where a
+    // prefetched item can reach the main placement pass before the lookahead pass has measured it.
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(scrollToTopEvents) {
+        scrollToTopEvents?.collectLatest { event ->
+            if (event == ScrollToTopEvent.NodesTabPressed) {
+                listState.smartScrollToTop(coroutineScope)
+            }
+        }
+    }
+
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val deviceType by viewModel.deviceType.collectAsStateWithLifecycle()
+
+    val density by viewModel.nodeListDensity.collectAsStateWithLifecycle()
+    val showPower by viewModel.shouldShowPower.collectAsStateWithLifecycle()
+    val showLastHeard by viewModel.shouldShowLastHeard.collectAsStateWithLifecycle()
+    val lastHeardIsRelative by viewModel.lastHeardIsRelative.collectAsStateWithLifecycle()
+    val showLocation by viewModel.shouldShowLocation.collectAsStateWithLifecycle()
+    val showHops by viewModel.shouldShowHops.collectAsStateWithLifecycle()
+    val showSignal by viewModel.shouldShowSignal.collectAsStateWithLifecycle()
+    val showChannel by viewModel.shouldShowChannel.collectAsStateWithLifecycle()
+    val showRole by viewModel.shouldShowRole.collectAsStateWithLifecycle()
+    val showTelemetry by viewModel.shouldShowTelemetry.collectAsStateWithLifecycle()
+
+    val isScrollInProgress by remember {
+        derivedStateOf { listState.isScrollInProgress && (listState.canScrollForward || listState.canScrollBackward) }
+    }
+
+    var showHelpSheet by remember { mutableStateOf(false) }
+    if (showHelpSheet) {
+        NodeListHelp(onDismiss = { showHelpSheet = false })
+    }
+
+    var showHopHistogram by remember { mutableStateOf(false) }
+    if (showHopHistogram) {
+        NodeHopHistogramSheet(nodes = unfilteredNodes, onDismiss = { showHopHistogram = false })
+    }
+
+    var showShareContact by remember { mutableStateOf(false) }
+    if (showShareContact) {
+        ShareContactDialog(contact = ourNode, onDismiss = { showShareContact = false }, isOwnContact = true)
+    }
+
+    // One row renderer, used by the list itself and by the search bar's expanded results, so the two can never drift.
+    // It stays a LazyItemScope lambda rather than a composable of its own because animateItem() needs that receiver.
+    val nodeRow: @Composable LazyItemScope.(Node) -> Unit = { node ->
+        var expanded by remember { mutableStateOf(false) }
+        var showDisplayNameDialog by remember { mutableStateOf(false) }
+
+        if (showDisplayNameDialog) {
+            DisplayNameDialog(
+                node = node,
+                onSave = viewModel::setNodeDisplayName,
+                onDismiss = { showDisplayNameDialog = false },
+            )
+        }
+
+        Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            val isThisNode = node.num == ourNode?.num
+            val ownItems = ownNodeMenuItems(node, ourNode, connectionState)
+            // Our own node only earns a long press while it has something to offer, or it opens an empty menu.
+            val longClick =
+                if (!isThisNode || ownItems.any) {
+                    { expanded = true }
+                } else {
+                    null
+                }
+
+            val isActive = remember(activeNodeId, node.num) { activeNodeId == node.num }
+
+            when (density) {
+                NodeListDensity.COMPLETE ->
+                    NodeItem(
+                        modifier = Modifier.animateItem(),
+                        thisNode = ourNode,
+                        thatNode = node,
+                        distanceUnits = state.distanceUnits,
+                        tempInFahrenheit = state.tempInFahrenheit,
+                        onClick = { navigateToNodeDetails(node.num) },
+                        onLongClick = longClick,
+                        connectionState = connectionState,
+                        deviceType = deviceType,
+                        isActive = isActive,
+                        showTelemetry = showTelemetry,
+                        deviceImageUrl = deviceImageUrls[node.user.hw_model.value],
+                    )
+
+                NodeListDensity.COMPACT ->
+                    NodeItemCompact(
+                        modifier = Modifier.animateItem(),
+                        thisNode = ourNode,
+                        thatNode = node,
+                        distanceUnits = state.distanceUnits,
+                        onClick = { navigateToNodeDetails(node.num) },
+                        onLongClick = longClick,
+                        isActive = isActive,
+                        showPower = showPower,
+                        showLastHeard = showLastHeard,
+                        lastHeardIsRelative = lastHeardIsRelative,
+                        showLocation = showLocation,
+                        showHops = showHops,
+                        showSignal = showSignal,
+                        showChannel = showChannel,
+                        showRole = showRole,
+                        showTelemetry = showTelemetry,
+                        tempInFahrenheit = state.tempInFahrenheit,
+                        deviceImageUrl = deviceImageUrls[node.user.hw_model.value],
+                    )
+            }
+            if (isThisNode) {
+                LocalNodeContextMenu(
+                    expanded = expanded && ownItems.any,
+                    onDismiss = { expanded = false },
+                    onUpdateStatus = onEditStatusMessage.takeIf { ownItems.updateStatus },
+                    onEditName = onEditName.takeIf { ownItems.editName },
+                    onShareContact = { showShareContact = true }.takeIf { ownItems.shareContact },
+                )
+            } else {
+                NodeContextMenu(
+                    expanded = expanded,
+                    node = node,
+                    ourNode = ourNode,
+                    onFavorite = { viewModel.favoriteNode(node) },
+                    onMute = { viewModel.muteNode(node) },
+                    onMessage = {
+                        val route = viewModel.getDirectMessageRoute(node)
+                        navigateToMessages(route)
+                    },
+                    onTraceRoute = { viewModel.traceRoute(node) },
+                    lastTracerouteTime = lastTracerouteTime,
+                    onIgnore = { viewModel.ignoreNode(node) },
+                    onRemove = { viewModel.removeNodes(listOf(node)) },
+                    onDismiss = { expanded = false },
+                    onOpenMeshView = { navigateToMeshView(node.num) },
+                    onOpenCompass = { navigateToCompass(node.num) },
+                    onSetDisplayName = { showDisplayNameDialog = true },
+                )
+            }
+        }
+    }
+
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            MainAppBar(
+                title = stringResource(Res.string.nodes),
+                // Node counts deliberately live in the list header (NodeCountSummary), not here: the app bar's
+                // title/subtitle slot competes for width with the node chip + action icons and is clipped to a
+                // single line, which truncated the counts (issue #6268).
+                ourNode = ourNode,
+                showNodeChip = ourNode != null && connectionState is ConnectionState.Connected,
+                canNavigateUp = false,
+                onNavigateUp = {},
+                actions = {
+                    IconButton(onClick = { showHopHistogram = true }) {
+                        Icon(
+                            imageVector = MeshtasticIcons.BarChart,
+                            contentDescription = stringResource(Res.string.hop_histogram_title),
+                        )
+                    }
+                    IconButton(onClick = { showHelpSheet = true }) {
+                        Icon(
+                            imageVector = MeshtasticIcons.Info,
+                            contentDescription = stringResource(Res.string.node_list_help_title),
+                        )
+                    }
+                },
+                onClickChip = { navigateToNodeDetails(it.num) },
+            )
+        },
+        floatingActionButton = {
+            val shareCapable = ourNode?.capabilities?.supportsQrCodeSharing ?: false
+            MeshtasticImportFAB(
+                modifier =
+                Modifier.animateFloatingActionButton(
+                    visible = !isScrollInProgress && connectionState == ConnectionState.Connected && shareCapable,
+                    alignment = androidx.compose.ui.Alignment.BottomEnd,
+                ),
+                onImport = { uriString ->
+                    val onInvalid: () -> Unit = { scope.launch { showToast(Res.string.channel_invalid) } }
+                    parseDeepLinkOrInvalid(uriString, onHandleDeepLink, onInvalid)
+                },
+                onShareContact = { showShareContact = true },
+                isContactContext = true,
+            )
+        },
+    ) { contentPadding ->
+        Box(modifier = Modifier.fillMaxSize().padding(contentPadding).focusable()) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                stickyHeader {
+                    val animatedAlpha by
+                        animateFloatAsState(targetValue = if (!isScrollInProgress) 1.0f else 0f, label = "alpha")
+                    Column(
+                        modifier =
+                        Modifier.fillMaxWidth()
+                            .graphicsLayer(alpha = animatedAlpha)
+                            .background(MaterialTheme.colorScheme.surfaceDim)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        NodeCountSummary(
+                            onlineCount = onlineNodeCount,
+                            shownCount = nodes.size,
+                            totalCount = totalNodeCount,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        )
+                        UnheardNodesBanner(
+                            unheardNodes = unheardNodes,
+                            onKeep = { viewModel.keepUnheardNodes(unheardNodes) },
+                            onRemoveAll = { viewModel.removeNodes(unheardNodes) },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        )
+                        val filterPrefs = viewModel.nodeFilterPreferences
+                        NodeFilterSearchBar(
+                            filterText = state.filter.filterText,
+                            onTextChange = { viewModel.nodeFilterText = it },
+                            currentSortOption = state.sort,
+                            onSortSelect = viewModel::setSortOption,
+                            modifier = Modifier.fillMaxWidth(),
+                            searchResults = {
+                                // The full-screen expanded bar hides the sticky header's counts.
+                                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                    item {
+                                        NodeCountSummary(
+                                            onlineCount = onlineNodeCount,
+                                            shownCount = nodes.size,
+                                            totalCount = totalNodeCount,
+                                            modifier =
+                                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                        )
+                                    }
+                                    items(nodes, key = { it.num }, itemContent = nodeRow)
+                                }
+                            },
+                            toggles =
+                            NodeFilterToggles(
+                                includeUnknown = state.filter.includeUnknown,
+                                onToggleIncludeUnknown = filterPrefs::toggleIncludeUnknown,
+                                excludeInfrastructure = state.filter.excludeInfrastructure,
+                                onToggleExcludeInfrastructure = filterPrefs::toggleExcludeInfrastructure,
+                                onlyOnline = state.filter.onlyOnline,
+                                onToggleOnlyOnline = filterPrefs::toggleOnlyOnline,
+                                onlyDirect = state.filter.onlyDirect,
+                                onToggleOnlyDirect = filterPrefs::toggleOnlyDirect,
+                                showIgnored = state.filter.showIgnored,
+                                onToggleShowIgnored = filterPrefs::toggleShowIgnored,
+                                ignoredNodeCount = ignoredNodeCount,
+                                excludeUnheard = state.filter.excludeUnheard,
+                                onToggleExcludeUnheard = filterPrefs::toggleExcludeUnheard,
+                                excludeMqtt = state.filter.excludeMqtt,
+                                onToggleExcludeMqtt = filterPrefs::toggleExcludeMqtt,
+                                onlySigned = state.filter.onlySigned,
+                                onToggleOnlySigned = filterPrefs::toggleOnlySigned,
+                                onlyEncrypted = state.filter.onlyEncrypted,
+                                onToggleOnlyEncrypted = filterPrefs::toggleOnlyEncrypted,
+                            ),
+                        )
+                    }
+                }
+
+                items(nodes, key = { it.num }, itemContent = nodeRow)
+                if (nodes.isEmpty() && !state.filter.isActive) {
+                    item {
+                        NodeListEmptyState(
+                            connectionState = connectionState,
+                            onNavigateToConnections = onNavigateToConnections,
+                            modifier = Modifier.fillParentMaxSize(),
+                        )
+                    }
+                }
+                item { Spacer(modifier = Modifier.height(88.dp)) }
+            }
+            ListScrollbar(listState)
+        }
+    }
+}
+
+/**
+ * Inline empty state for the Nodes screen. Material 3 inline empty-state guidance: a small muted icon, short title, and
+ * supporting hint. When the user has no device selected (or is otherwise disconnected), an action button routes them to
+ * the Connections tab; when connected with no nodes yet we show a passive "searching" state.
+ */
+@Composable
+private fun NodeListEmptyState(
+    connectionState: ConnectionState,
+    onNavigateToConnections: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isConnected = connectionState == ConnectionState.Connected
+    val (icon: ImageVector, title: String, hint: String) =
+        if (isConnected) {
+            Triple(
+                MeshtasticIcons.Nodes,
+                stringResource(Res.string.nodes_empty_searching_title),
+                stringResource(Res.string.nodes_empty_searching_hint),
+            )
+        } else {
+            Triple(
+                MeshtasticIcons.NoDevice,
+                stringResource(Res.string.nodes_empty_disconnected_title),
+                stringResource(Res.string.nodes_empty_disconnected_hint),
+            )
+        }
+    EmptyState(
+        icon = icon,
+        title = title,
+        supportingText = hint,
+        modifier = modifier,
+        action =
+        if (isConnected) {
+            null
+        } else {
+            { Button(onClick = onNavigateToConnections) { Text(stringResource(Res.string.set_up_connection)) } }
+        },
+    )
+}
+
+/**
+ * Offers to remove the nodes the radio has not heard since its LoRa settings changed.
+ *
+ * Shown as an offer, never an automatic removal: the app's node DB is deliberately a superset of the radio's, and a
+ * node may simply be out of range rather than on another channel — it comes back on its own when next heard.
+ *
+ * Keep is saved per node, so the banner stays away across launches and returns only for nodes not yet kept. Remove
+ * hides it for this composition, since the removal still waits on its confirmation.
+ */
+@Composable
+private fun UnheardNodesBanner(
+    unheardNodes: List<Node>,
+    onKeep: () -> Unit,
+    onRemoveAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var removing by remember { mutableStateOf(false) }
+    var previousCount by remember { mutableIntStateOf(0) }
+    val count = unheardNodes.size
+
+    LaunchedEffect(count) {
+        if (count > previousCount) removing = false
+        previousCount = count
+    }
+
+    if (count == 0 || removing) return
+
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    imageVector = MeshtasticIcons.SignalOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.StatusOrange,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(
+                    text =
+                    if (count == 1) {
+                        stringResource(Res.string.nodes_unheard_banner_one)
+                    } else {
+                        stringResource(Res.string.nodes_unheard_banner, count)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
+                TextButton(onClick = onKeep) { Text(stringResource(Res.string.nodes_unheard_keep)) }
+                TextButton(
+                    onClick = {
+                        onRemoveAll()
+                        removing = true
+                    },
+                ) {
+                    Text(stringResource(Res.string.nodes_unheard_remove))
+                }
+            }
+        }
+    }
+}

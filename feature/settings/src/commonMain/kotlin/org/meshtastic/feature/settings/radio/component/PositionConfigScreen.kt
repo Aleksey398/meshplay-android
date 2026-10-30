@@ -1,0 +1,451 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.model.Position
+import org.meshtastic.core.model.schemaLabelRes
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.advanced_device_gps
+import org.meshtastic.core.resources.altitude
+import org.meshtastic.core.resources.device_gps
+import org.meshtastic.core.resources.latitude
+import org.meshtastic.core.resources.longitude
+import org.meshtastic.core.resources.position
+import org.meshtastic.core.resources.position_packet
+import org.meshtastic.core.resources.schema_position_broadcast_smart_minimum_distance
+import org.meshtastic.core.resources.schema_position_broadcast_smart_minimum_distance_description
+import org.meshtastic.core.resources.schema_position_broadcast_smart_minimum_interval_secs
+import org.meshtastic.core.resources.schema_position_broadcast_smart_minimum_interval_secs_description
+import org.meshtastic.core.resources.schema_position_fixed_position
+import org.meshtastic.core.resources.schema_position_fixed_position_description
+import org.meshtastic.core.resources.schema_position_gps_en_gpio
+import org.meshtastic.core.resources.schema_position_gps_en_gpio_description
+import org.meshtastic.core.resources.schema_position_gps_mode
+import org.meshtastic.core.resources.schema_position_gps_update_interval
+import org.meshtastic.core.resources.schema_position_gps_update_interval_description
+import org.meshtastic.core.resources.schema_position_position_broadcast_secs
+import org.meshtastic.core.resources.schema_position_position_broadcast_secs_description
+import org.meshtastic.core.resources.schema_position_position_broadcast_smart_enabled
+import org.meshtastic.core.resources.schema_position_position_flags
+import org.meshtastic.core.resources.schema_position_position_flags_description
+import org.meshtastic.core.resources.schema_position_rx_gpio
+import org.meshtastic.core.resources.schema_position_rx_gpio_description
+import org.meshtastic.core.resources.schema_position_tx_gpio
+import org.meshtastic.core.resources.schema_position_tx_gpio_description
+import org.meshtastic.core.ui.component.BitwisePreference
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ConfigRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.FixedUpdateIntervals
+import org.meshtastic.feature.settings.util.IntervalConfiguration
+import org.meshtastic.feature.settings.util.fieldTitle
+import org.meshtastic.feature.settings.util.offeredOn
+import org.meshtastic.feature.settings.util.toDisplayString
+import org.meshtastic.proto.Config
+import org.meshtastic.proto.FieldMetadata
+import org.meshtastic.proto.broadcast_smart_minimum_distance
+import org.meshtastic.proto.gps_en_gpio
+import org.meshtastic.proto.rx_gpio
+import org.meshtastic.proto.tx_gpio
+
+@Composable
+expect fun DeviceLocationButton(
+    viewModel: RadioConfigViewModel,
+    enabled: Boolean,
+    onLocationReceived: (Position) -> Unit,
+)
+
+private val PositionStateSaver =
+    listSaver<Position, Any?>(
+        save = {
+            listOf(
+                it.latitude,
+                it.longitude,
+                it.altitude,
+                it.time,
+                it.satellitesInView,
+                it.groundSpeed,
+                it.groundTrack,
+                it.precisionBits,
+            )
+        },
+        restore = {
+            Position(
+                latitude = it[0] as Double,
+                longitude = it[1] as Double,
+                altitude = it[2] as Int?,
+                time = it[3] as Int,
+                satellitesInView = it[4] as Int,
+                groundSpeed = it[5] as Int,
+                groundTrack = it[6] as Int,
+                precisionBits = it[7] as Int,
+            )
+        },
+    )
+
+@Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod")
+fun PositionConfigScreenCommon(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val node by viewModel.destNode.collectAsStateWithLifecycle()
+    val currentPosition =
+        Position(
+            latitude = node?.latitude ?: 0.0,
+            longitude = node?.longitude ?: 0.0,
+            altitude = node?.position?.altitude,
+            time = 1, // ignore time for fixed_position
+        )
+    val positionConfig = state.radioConfig.position ?: Config.PositionConfig.Builder().build()
+    val sanitizedPositionConfig =
+        remember(positionConfig) {
+            val positionItems = IntervalConfiguration.POSITION.allowedIntervals
+            val smartBroadcastItems = IntervalConfiguration.SMART_BROADCAST_MINIMUM.allowedIntervals
+            var updated = positionConfig
+            if (FixedUpdateIntervals.fromValue(updated.position_broadcast_secs.toLong()) == null) {
+                updated =
+                    updated
+                        .newBuilder()
+                        .also { wb -> wb.position_broadcast_secs = positionItems.first().value.toInt() }
+                        .build()
+            }
+            if (FixedUpdateIntervals.fromValue(updated.broadcast_smart_minimum_interval_secs.toLong()) == null) {
+                updated =
+                    updated
+                        .newBuilder()
+                        .also { wb ->
+                            wb.broadcast_smart_minimum_interval_secs = smartBroadcastItems.first().value.toInt()
+                        }
+                        .build()
+            }
+            if (FixedUpdateIntervals.fromValue(updated.gps_update_interval.toLong()) == null) {
+                updated =
+                    updated
+                        .newBuilder()
+                        .also { wb -> wb.gps_update_interval = positionItems.first().value.toInt() }
+                        .build()
+            }
+            updated
+        }
+    val formState = rememberConfigState(initialValue = sanitizedPositionConfig)
+    // Position is not Bundle-storable, so persist it through a custom Saver of its primitive fields.
+    var locationInput by
+        rememberSaveable(currentPosition, stateSaver = PositionStateSaver) { mutableStateOf(currentPosition) }
+
+    val focusManager = LocalFocusManager.current
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.position),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        additionalDirtyCheck = { locationInput != currentPosition },
+        onDiscard = { locationInput = currentPosition },
+        onSave = {
+            if (formState.value.fixed_position) {
+                if (locationInput != currentPosition) {
+                    viewModel.setFixedPosition(locationInput)
+                }
+            } else {
+                if (positionConfig.fixed_position) {
+                    // fixed position changed from enabled to disabled
+                    viewModel.removeFixedPosition()
+                }
+            }
+            val config = Config.Builder().also { wb -> wb.position = it }.build()
+            viewModel.setConfig(config)
+        },
+    ) {
+        val cards =
+            ArrayDeque(
+                partitionFieldKeys(
+                    SettingsSearchCatalog.fieldKeys(ConfigRoute.POSITION.route),
+                    "schema_position_",
+                    listOf("fixed_position", "gps_mode", "gps_update_interval"),
+                    listOf("position_flags"),
+                    listOf("rx_gpio", "tx_gpio", "gps_en_gpio"),
+                ),
+            )
+        fieldItem(cards.removeFirst()) {
+            TitledCard(title = stringResource(Res.string.position_packet)) {
+                val items = remember { IntervalConfiguration.POSITION_BROADCAST.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_position_position_broadcast_secs),
+                    modifier = Modifier.settingsField(Res.string.schema_position_position_broadcast_secs),
+                    summary = stringResource(Res.string.schema_position_position_broadcast_secs_description),
+                    enabled = state.connected,
+                    items = items.map { it to it.toDisplayString() },
+                    selectedItem =
+                    FixedUpdateIntervals.fromValue(formState.value.position_broadcast_secs.toLong())
+                        ?: items.first(),
+                    onItemSelected = {
+                        formState.value =
+                            formState.value
+                                .newBuilder()
+                                .also { wb -> wb.position_broadcast_secs = it.value.toInt() }
+                                .build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_position_position_broadcast_smart_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_position_position_broadcast_smart_enabled),
+                    checked = formState.value.position_broadcast_smart_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.position_broadcast_smart_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                if (formState.value.position_broadcast_smart_enabled) {
+                    HorizontalDivider()
+                    val smartItems = remember { IntervalConfiguration.SMART_BROADCAST_MINIMUM.allowedIntervals }
+                    DropDownPreference(
+                        title = stringResource(Res.string.schema_position_broadcast_smart_minimum_interval_secs),
+                        modifier =
+                        Modifier.settingsField(Res.string.schema_position_broadcast_smart_minimum_interval_secs),
+                        summary =
+                        stringResource(
+                            Res.string.schema_position_broadcast_smart_minimum_interval_secs_description,
+                        ),
+                        enabled = state.connected,
+                        items = smartItems.map { it to it.toDisplayString() },
+                        selectedItem =
+                        FixedUpdateIntervals.fromValue(
+                            formState.value.broadcast_smart_minimum_interval_secs.toLong(),
+                        ) ?: smartItems.first(),
+                        onItemSelected = {
+                            formState.value =
+                                formState.value
+                                    .newBuilder()
+                                    .also { wb -> wb.broadcast_smart_minimum_interval_secs = it.value.toInt() }
+                                    .build()
+                        },
+                    )
+                    HorizontalDivider()
+                    EditTextPreference(
+                        title =
+                        fieldTitle(
+                            Res.string.schema_position_broadcast_smart_minimum_distance,
+                            Config.PositionConfig.broadcast_smart_minimum_distance,
+                        ),
+                        modifier = Modifier.settingsField(Res.string.schema_position_broadcast_smart_minimum_distance),
+                        summary =
+                        stringResource(Res.string.schema_position_broadcast_smart_minimum_distance_description),
+                        value = formState.value.broadcast_smart_minimum_distance,
+                        enabled = state.connected,
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        onValueChanged = {
+                            formState.value =
+                                formState.value
+                                    .newBuilder()
+                                    .also { wb -> wb.broadcast_smart_minimum_distance = it }
+                                    .build()
+                        },
+                    )
+                }
+            }
+        }
+        fieldItem(cards.removeFirst()) {
+            TitledCard(title = stringResource(Res.string.device_gps)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_position_fixed_position),
+                    modifier = Modifier.settingsField(Res.string.schema_position_fixed_position),
+                    summary = stringResource(Res.string.schema_position_fixed_position_description),
+                    checked = formState.value.fixed_position,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.fixed_position = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                if (formState.value.fixed_position) {
+                    HorizontalDivider()
+                    EditTextPreference(
+                        title = stringResource(Res.string.latitude),
+                        value = locationInput.latitude,
+                        enabled = state.connected,
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        onValueChanged = { lat: Double ->
+                            if (lat >= -90 && lat <= 90.0) {
+                                locationInput = locationInput.copy(latitude = lat)
+                            }
+                        },
+                    )
+                    HorizontalDivider()
+                    EditTextPreference(
+                        title = stringResource(Res.string.longitude),
+                        value = locationInput.longitude,
+                        enabled = state.connected,
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        onValueChanged = { lon: Double ->
+                            if (lon >= -180 && lon <= 180.0) {
+                                locationInput = locationInput.copy(longitude = lon)
+                            }
+                        },
+                    )
+                    HorizontalDivider()
+                    EditTextPreference(
+                        title = stringResource(Res.string.altitude),
+                        value = locationInput.altitude ?: 0,
+                        enabled = state.connected,
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        onValueChanged = { alt: Int -> locationInput = locationInput.copy(altitude = alt) },
+                    )
+                    HorizontalDivider()
+                    DeviceLocationButton(
+                        viewModel = viewModel,
+                        enabled = state.connected,
+                        onLocationReceived = { locationInput = it },
+                    )
+                } else {
+                    HorizontalDivider()
+                    DropDownPreference(
+                        title = stringResource(Res.string.schema_position_gps_mode),
+                        modifier = Modifier.settingsField(Res.string.schema_position_gps_mode),
+                        enabled = state.connected,
+                        selectedItem = formState.value.gps_mode,
+                        onItemSelected = {
+                            formState.value = formState.value.newBuilder().also { wb -> wb.gps_mode = it }.build()
+                        },
+                    )
+                    HorizontalDivider()
+                    val items = remember { IntervalConfiguration.GPS_UPDATE.allowedIntervals }
+                    DropDownPreference(
+                        title = stringResource(Res.string.schema_position_gps_update_interval),
+                        modifier = Modifier.settingsField(Res.string.schema_position_gps_update_interval),
+                        summary = stringResource(Res.string.schema_position_gps_update_interval_description),
+                        enabled = state.connected,
+                        items = items.map { it to it.toDisplayString() },
+                        selectedItem =
+                        FixedUpdateIntervals.fromValue(formState.value.gps_update_interval.toLong())
+                            ?: items.first(),
+                        onItemSelected = {
+                            formState.value =
+                                formState.value
+                                    .newBuilder()
+                                    .also { wb -> wb.gps_update_interval = it.value.toInt() }
+                                    .build()
+                        },
+                    )
+                }
+            }
+        }
+        fieldItem(cards.removeFirst()) {
+            TitledCard(title = stringResource(Res.string.schema_position_position_flags)) {
+                BitwisePreference(
+                    title = stringResource(Res.string.schema_position_position_flags),
+                    modifier = Modifier.settingsField(Res.string.schema_position_position_flags),
+                    summary = stringResource(Res.string.schema_position_position_flags_description),
+                    value = formState.value.position_flags,
+                    enabled = state.connected,
+                    items =
+                    Config.PositionConfig.PositionFlags.entries
+                        .filter { it != Config.PositionConfig.PositionFlags.UNSET }
+                        .map { flag ->
+                            flag.value to (flag.schemaLabelRes()?.let { stringResource(it) } ?: flag.name)
+                        },
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.position_flags = it }.build()
+                    },
+                )
+            }
+        }
+        val config = formState.value
+        val pinRows =
+            listOf(
+                GpioPinRow(
+                    Config.PositionConfig.rx_gpio,
+                    Res.string.schema_position_rx_gpio,
+                    Res.string.schema_position_rx_gpio_description,
+                    config.rx_gpio,
+                ) { wb, pin ->
+                    wb.rx_gpio = pin
+                },
+                GpioPinRow(
+                    Config.PositionConfig.tx_gpio,
+                    Res.string.schema_position_tx_gpio,
+                    Res.string.schema_position_tx_gpio_description,
+                    config.tx_gpio,
+                ) { wb, pin ->
+                    wb.tx_gpio = pin
+                },
+                GpioPinRow(
+                    Config.PositionConfig.gps_en_gpio,
+                    Res.string.schema_position_gps_en_gpio,
+                    Res.string.schema_position_gps_en_gpio_description,
+                    config.gps_en_gpio,
+                ) { wb, pin ->
+                    wb.gps_en_gpio = pin
+                },
+            )
+                .filter { it.metadata.offeredOn(state.isOemFixedGps, holdsValue = it.value != 0) }
+        if (pinRows.isNotEmpty()) {
+            fieldItem(cards.removeFirst()) {
+                TitledCard(title = stringResource(Res.string.advanced_device_gps)) {
+                    val pins = remember { org.meshtastic.feature.settings.util.gpioPins }
+                    pinRows.forEachIndexed { index, row ->
+                        if (index > 0) HorizontalDivider()
+                        DropDownPreference(
+                            title = stringResource(row.title),
+                            modifier = Modifier.settingsField(row.title),
+                            summary = stringResource(row.description),
+                            enabled = state.connected,
+                            items = pins,
+                            selectedItem = row.value,
+                            onItemSelected = { pin ->
+                                formState.value = formState.value.newBuilder().also { wb -> row.set(wb, pin) }.build()
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One of the board-wiring pin pickers, with the schema metadata that decides whether this board is offered it. */
+private class GpioPinRow(
+    val metadata: FieldMetadata,
+    val title: StringResource,
+    val description: StringResource,
+    val value: Int,
+    val set: (Config.PositionConfig.Builder, Int) -> Unit,
+)

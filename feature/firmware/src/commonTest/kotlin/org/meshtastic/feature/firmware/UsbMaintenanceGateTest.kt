@@ -1,0 +1,1078 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.firmware
+
+import kotlinx.serialization.json.Json
+import org.meshtastic.core.model.DeviceHardware
+import org.meshtastic.core.model.MaintenanceUf2Manifest
+import org.meshtastic.core.model.SoftDeviceVariant
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/**
+ * Tests the pure availability gate and pinned-asset resolvers.
+ *
+ * These are the safety-critical decisions for factory erase, so they live in a pure function with no fakes: the
+ * dangerous direction (writing a wrong-SoftDevice erase image) cannot be tested on hardware without destroying a
+ * device, which makes table-driven unit coverage of the refusal logic the only real verification available.
+ *
+ * Concrete (not a `Common*Test` base) because nothing here touches `CommonUri`, so it needs no platform subclass and
+ * cannot silently contribute zero tests.
+ */
+class UsbMaintenanceGateTest {
+
+    private val manifestJson = Json { ignoreUnknownKeys = true }
+
+    /**
+     * The real maintenance-UF2 manifest ([api/data/maintenanceUf2.json] in `meshtastic/api`, embedded verbatim), so
+     * this test suite keeps exercising the exact board/digest table that ships, not a hand-trimmed fixture that could
+     * drift from it silently.
+     */
+    private val testManifest =
+        manifestJson.decodeFromString<MaintenanceUf2Manifest>(
+            """
+            {
+              "manifestVersion": 1,
+              "otafixReleaseTag": "0.9.2-OTAFIX2.3-BP1.5",
+              "otafixBase": "https://github.com/meshtastic/nRF52_Bootloader/releases/download/0.9.2-OTAFIX2.3-BP1.5",
+              "erase": {
+                "nrf52": {
+                  "6.1.1": {
+                    "fileName": "nrf_erase2.uf2",
+                    "sha256": "4b778a3def19854415db64cb51bfd29c15b11cc46006353dd518f62d09efe3fe",
+                    "expectedFirstTargetAddress": 155648
+                  },
+                  "7.3.0": {
+                    "fileName": "nrf_erase_sd7_3.uf2",
+                    "sha256": "13941bedce009e61255c37b1524d11ca604e88c38e7588bb8b391e2998da468f",
+                    "expectedFirstTargetAddress": 159744
+                  }
+                },
+                "nrf52Bootloader": {
+                  "fileName": "meshtastic_factory_erase.uf2",
+                  "sha256": "6ef3146505c40079ee9e7e692448e40a793dad636f55d1545063299d28908f0d",
+                  "expectedFamilyId": 1296388936
+                },
+                "rp2040": {
+                  "fileName": "pico_erase.uf2",
+                  "sha256": "08aa7d561e8b8bf2f9b061b3506fb4d8f135e832efe0f3ae978241db2da0c853"
+                }
+              },
+              "otafixByBoardId": {
+                "HT-n5262": {
+                  "otafixBoardSlug": "heltec_t114",
+                  "sha256": "ae92d3577cb58dd9b43c9b61ffb9bfffda05b0eca4113a0ec42a37cd8be53b19"
+                },
+                "MinewSemi-MX25LE01": {
+                  "otafixBoardSlug": "minewsemi_mx25le01",
+                  "sha256": "e09564fd8dd03fc25d76dcb732a0214c79653da3b130240949b783254d3dfc1b"
+                },
+                "TRACKER L1": {
+                  "otafixBoardSlug": "wio_tracker_l1",
+                  "sha256": "70fbce0eda9d70d7bd8a4367057badf5ec310838bf3221370d45a56f04956b9e"
+                },
+                "WisBlock-RAK4631-Board": {
+                  "otafixBoardSlug": "wiscore_rak4631_board",
+                  "sha256": "8741bc677a3c24f28422c5ffb80761de7d98a127a3b0191ba6585bf57ce9f305"
+                },
+                "WisMesh-Tag": {
+                  "otafixBoardSlug": "wismesh_tag",
+                  "sha256": "96d42e1990e17251e8c625e98a1551cac12c6e29111bc2e59ab7c9fe6dec8758"
+                },
+                "nRF52840-SeeedSenseCAPSolarP1-v1": {
+                  "otafixBoardSlug": "sensecap_solar_p1",
+                  "sha256": "9b4bce48c1b4830617715c5619457bce6b21f3079803e35e13433de7701290f5"
+                },
+                "nRF52840-SeeedXiao-v1": {
+                  "otafixBoardSlug": "xiao_nrf52840_ble",
+                  "sha256": "ff8a0916e98cceb394fd66590bccc17f63612c11ff56b086ef88bd436c8df67f"
+                },
+                "nRF52840-SeeedXiaoSense-v1": {
+                  "otafixBoardSlug": "xiao_nrf52840_ble_sense",
+                  "sha256": "fc233d83a1011419625fcb50b49084578460c25bbc0270374ca176757a3c40da"
+                },
+                "nRF52840-T1000-E-v1": {
+                  "otafixBoardSlug": "t1000_e",
+                  "sha256": "5c065e11b8acd5b0cefa9295f98bca1512306cfa478856aa76a871124a904cc4"
+                },
+                "nRF52840-TEcho-v1": {
+                  "otafixBoardSlug": "lilygo_techo",
+                  "sha256": "2ddb36188ffe521c270bb2ce8441d742d0fe45325c57e4db6475bf63162a59b0"
+                },
+                "nRF52840-ThinkNode-M3-v1": {
+                  "otafixBoardSlug": "thinknode_m3",
+                  "sha256": "bf90979f2f6adc96ef6ca09c280b2ab7e66cb8ce2654fc80da9b20407bfb8708"
+                },
+                "nRF52840-ThinkNodeM1-v1": {
+                  "otafixBoardSlug": "thinknode_m1",
+                  "sha256": "aa0721b573c60e0b179274d5a5296bac7a8436faf339cfc03116ebe8a4375795"
+                },
+                "nRF52840-ThinkNodeM6-v1": {
+                  "otafixBoardSlug": "thinknode_m6",
+                  "sha256": "aaf94953a540a18f3e48f4cdec0c78290ad3c5f8740aea26fa3b3ce3632a8d4a"
+                },
+                "nRF52840-promicro": {
+                  "otafixBoardSlug": "promicro_nrf52840",
+                  "sha256": "46ef3440f151d6f2606075bcd1aa83db25a660da7d25b988aeb47ef350c98794"
+                }
+              },
+              "otafixSupportedTargets": [
+                "rak4631",
+                "rak_wismeshtag",
+                "t-echo",
+                "heltec-mesh-node-t114",
+                "nrf52_promicro_diy_tcxo",
+                "thinknode_m1",
+                "thinknode_m3",
+                "thinknode_m6",
+                "tracker-t1000-e",
+                "seeed_wio_tracker_L1",
+                "seeed_wio_tracker_L1_eink",
+                "seeed_solar_node",
+                "seeed_xiao_nrf52840_kit"
+              ]
+            }
+            """
+                .trimIndent(),
+        )
+
+    private fun nrf(
+        variant: SoftDeviceVariant? = SoftDeviceVariant.S140_6_1_1,
+        target: String = "rak4631",
+        slug: String = "RAK4631",
+    ) = DeviceHardware(
+        hwModelSlug = slug,
+        platformioTarget = target,
+        architecture = "nrf52840",
+        softDeviceVariant = variant,
+    )
+
+    private fun rp2040(target: String = "pico") =
+        DeviceHardware(hwModelSlug = "RPI_PICO", platformioTarget = target, architecture = "rp2040")
+
+    private fun esp32() =
+        DeviceHardware(hwModelSlug = "HELTEC_V3", platformioTarget = "heltec-v3", architecture = "esp32-s3")
+
+    /**
+     * Calls the gate on a platform that can run the sequence, which is what every scenario below is about.
+     * [supportsMaintenance] is spelled out only where the platform itself is the subject — the real function takes it
+     * undefaulted so no production call site can forget it.
+     */
+    private fun maintenanceGate(
+        manifest: MaintenanceUf2Manifest,
+        hardware: DeviceHardware,
+        updateMethod: FirmwareUpdateMethod,
+        hasRelease: Boolean,
+        supportsMaintenance: Boolean = true,
+    ) = usbMaintenanceGate(manifest, hardware, updateMethod, hasRelease, supportsMaintenance)
+
+    // ── Architecture and transport gating (R11) ──────────────────────────────
+
+    @Test
+    fun `gate is shown for nrf52840 over usb with a release`() {
+        val gate = maintenanceGate(testManifest, nrf(), FirmwareUpdateMethod.Usb, hasRelease = true)
+
+        assertTrue(gate.show, "nRF52840 over USB should offer maintenance")
+        assertNull(gate.eraseRefusal, "A resolved SoftDevice must not refuse")
+    }
+
+    @Test
+    fun `gate is shown for rp2040 over usb and never refuses on softdevice`() {
+        val gate = maintenanceGate(testManifest, rp2040(), FirmwareUpdateMethod.Usb, hasRelease = true)
+
+        assertTrue(gate.show, "RP2040 over USB should offer maintenance")
+        assertNull(gate.eraseRefusal, "RP2040 has no SoftDevice to resolve")
+        assertFalse(gate.showBootloaderUpgrade, "OTAFIX is nRF-only")
+    }
+
+    /**
+     * The manifest is now fetched from `resource/maintenanceUf2` rather than compiled in, so a hostile or corrupt row
+     * is reachable input. A traversal-shaped `fileName` must refuse *that image* and leave the rest of the screen
+     * working — throwing out of a resolver every caller documents as nullable would surface as a blanket
+     * `FirmwareUpdateState.Error` and hide the maintenance action for every device.
+     */
+    @Test
+    fun `an unsafe erase filename refuses the image instead of throwing`() {
+        val hostile =
+            manifestJson.decodeFromString<MaintenanceUf2Manifest>(
+                """
+                {
+                  "erase": {
+                    "nrf52": {
+                      "6.1.1": { "fileName": "../../etc/passwd", "sha256": "00" }
+                    },
+                    "rp2040": { "fileName": "sub/dir/pico_erase.uf2", "sha256": "00" }
+                  }
+                }
+                """
+                    .trimIndent(),
+            )
+
+        assertNull(eraseUf2For(hostile, nrf()), "A traversal fileName must resolve to null, not throw")
+        assertNull(eraseUf2For(hostile, rp2040()), "A separator in fileName must resolve to null, not throw")
+
+        val gate = maintenanceGate(hostile, rp2040(), FirmwareUpdateMethod.Usb, hasRelease = true)
+        assertEquals(UsbMaintenanceRefusal.MaintenanceDataUnavailable, gate.eraseRefusal)
+    }
+
+    /** Same contract for the OTAFIX side, whose file name is composed from two manifest-supplied strings. */
+    @Test
+    fun `an unsafe otafix slug or tag refuses the image instead of throwing`() {
+        val hostile =
+            manifestJson.decodeFromString<MaintenanceUf2Manifest>(
+                """
+                {
+                  "otafixReleaseTag": "../../../evil",
+                  "otafixBase": "https://example.invalid/releases",
+                  "otafixByBoardId": {
+                    "rak4631": { "otafixBoardSlug": "rak4631", "sha256": "00" }
+                  }
+                }
+                """
+                    .trimIndent(),
+            )
+
+        assertNull(otafixUf2ForBoardId(hostile, "rak4631"), "A traversal release tag must resolve to null, not throw")
+    }
+
+    /**
+     * RP2040 has a UF2 erase path, so an absent image is missing data — not an unsupported architecture. The two
+     * refusals carry different copy ("try again" vs "not possible on this device").
+     */
+    @Test
+    fun `rp2040 with no erase data reports missing data rather than unsupported architecture`() {
+        val empty = MaintenanceUf2Manifest()
+
+        val gate = maintenanceGate(empty, rp2040(), FirmwareUpdateMethod.Usb, hasRelease = true)
+
+        assertEquals(UsbMaintenanceRefusal.MaintenanceDataUnavailable, gate.eraseRefusal)
+    }
+
+    @Test
+    fun `gate is hidden for esp32 even over usb`() {
+        assertFalse(maintenanceGate(testManifest, esp32(), FirmwareUpdateMethod.Usb, hasRelease = true).show)
+    }
+
+    @Test
+    fun `gate is hidden for every non-usb transport`() {
+        listOf(FirmwareUpdateMethod.Ble, FirmwareUpdateMethod.Wifi, FirmwareUpdateMethod.Unknown).forEach { method ->
+            assertFalse(
+                maintenanceGate(testManifest, nrf(), method, hasRelease = true).show,
+                "Maintenance must not be offered over $method — the flow needs the UF2 mass-storage drive",
+            )
+        }
+    }
+
+    @Test
+    fun `gate is hidden without a release because there would be nothing to reflash`() {
+        assertFalse(maintenanceGate(testManifest, nrf(), FirmwareUpdateMethod.Usb, hasRelease = false).show)
+    }
+
+    /**
+     * Desktop has no UF2 maintenance flow: it cannot classify a bootloader volume and cannot unblock the CDC port the
+     * erase image waits on. Offering the section there ends in a refusal the user can do nothing about, so an otherwise
+     * fully eligible device must still hide it.
+     */
+    @Test
+    fun `gate is hidden on a platform that cannot run the sequence`() {
+        val gate =
+            maintenanceGate(
+                testManifest,
+                nrf(),
+                FirmwareUpdateMethod.Usb,
+                hasRelease = true,
+                supportsMaintenance = false,
+            )
+
+        assertFalse(gate.show, "A platform with no maintenance flow must hide the section rather than refuse it")
+        assertNull(gate.eraseRefusal, "Platform incapability is not a refusal the user can act on")
+        assertFalse(gate.showBootloaderUpgrade, "OTAFIX needs the same sequence")
+    }
+
+    // ── Fail-closed SoftDevice refusal (R4) ──────────────────────────────────
+
+    @Test
+    fun `unresolved softdevice shows the action but refuses it`() {
+        val gate = maintenanceGate(testManifest, nrf(variant = null), FirmwareUpdateMethod.Usb, hasRelease = true)
+
+        assertTrue(gate.show, "The action stays visible so the refusal can be explained")
+        assertEquals(UsbMaintenanceRefusal.UnknownSoftDevice, gate.eraseRefusal)
+    }
+
+    @Test
+    fun `no erase image is resolved for an unresolved softdevice`() {
+        assertNull(
+            eraseUf2For(testManifest, nrf(variant = null)),
+            "An unknown variant must never fall back to a default image",
+        )
+    }
+
+    @Test
+    fun `each softdevice variant resolves to its own image and target address`() {
+        val six = eraseUf2For(testManifest, nrf(variant = SoftDeviceVariant.S140_6_1_1))
+        val seven = eraseUf2For(testManifest, nrf(variant = SoftDeviceVariant.S140_7_3_0))
+
+        assertNotNull(six)
+        assertNotNull(seven)
+        assertEquals("nrf_erase2.uf2", six.fileName)
+        assertEquals("nrf_erase_sd7_3.uf2", seven.fileName)
+        assertEquals(0x26000L, six.expectedFirstTargetAddress)
+        assertEquals(0x27000L, seven.expectedFirstTargetAddress)
+        assertTrue(six.sha256 != seven.sha256, "The two variants must not share a digest")
+    }
+
+    @Test
+    fun `esp32 resolves no erase image`() {
+        assertNull(eraseUf2For(testManifest, esp32()))
+    }
+
+    @Test
+    fun `rp2040 resolves the pico erase image with no address invariant`() {
+        val asset = eraseUf2For(testManifest, rp2040())
+
+        assertNotNull(asset)
+        assertEquals("pico_erase.uf2", asset.fileName)
+        assertNull(asset.expectedFirstTargetAddress, "RP2040 carries no variant-to-address invariant")
+    }
+
+    // ── OTAFIX bootloader image resolution (R5) ──────────────────────────────
+
+    @Test
+    fun `otafix is offered only for supported targets`() {
+        assertTrue(
+            maintenanceGate(testManifest, nrf(target = "rak4631"), FirmwareUpdateMethod.Usb, hasRelease = true)
+                .showBootloaderUpgrade,
+        )
+        assertTrue(
+            maintenanceGate(
+                testManifest,
+                nrf(target = "heltec-mesh-node-t114"),
+                FirmwareUpdateMethod.Usb,
+                hasRelease = true,
+            )
+                .showBootloaderUpgrade,
+            "T114 is on OTAFIX's supported list even though the project names differ",
+        )
+    }
+
+    @Test
+    fun `otafix is not offered for products that merely share a supported build target`() {
+        // WISMESH Hub/Tap, Nomadstar Meteor Pro and RAK3401 all build against wiscore_rak4631, and T-Echo Plus/Lite
+        // against t-echo, but OTAFIX ships no bootloader for those products.
+        listOf(
+            "rak2560",
+            "rak_wismeshtap",
+            "rak4631_nomadstar_meteor_pro",
+            "rak3401-1watt",
+            "t-echo-plus",
+            "t-echo-lite",
+        )
+            .forEach { target ->
+                assertFalse(
+                    maintenanceGate(testManifest, nrf(target = target), FirmwareUpdateMethod.Usb, hasRelease = true)
+                        .showBootloaderUpgrade,
+                    "$target is not an OTAFIX-supported product",
+                )
+            }
+    }
+
+    // ── Board-ID resolution: the actual safety gate (R5) ─────────────────────
+
+    @Test
+    fun `every shipped otafix image resolves and no two boards share a digest or filename`() {
+        assertEquals(
+            14,
+            testManifest.otafixByBoardId.keys.size,
+            "${testManifest.otafixReleaseTag} ships 14 update images",
+        )
+        val images =
+            testManifest.otafixByBoardId.keys.map {
+                assertNotNull(otafixUf2ForBoardId(testManifest, it), "no image for $it")
+            }
+        assertEquals(images.size, images.map { it.sha256 }.toSet().size, "No two boards may share a digest")
+        assertEquals(images.size, images.map { it.fileName }.toSet().size, "No two boards may share a filename")
+    }
+
+    /**
+     * Board-ID -> (release filename, sha256), transcribed from the actual `0.9.2-OTAFIX2.3-BP1.5` release assets
+     * (downloaded and hashed, not carried over from BP1.4), so a future edit that pairs the right hash with the wrong
+     * board — or vice versa — fails here even though it would still pass the uniqueness-only checks above.
+     */
+    private val expectedOtafixAssetsByBoardId =
+        mapOf(
+            "HT-n5262" to
+                (
+                    "update-heltec_t114_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "ae92d3577cb58dd9b43c9b61ffb9bfffda05b0eca4113a0ec42a37cd8be53b19"
+                    ),
+            "MinewSemi-MX25LE01" to
+                (
+                    "update-minewsemi_mx25le01_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "e09564fd8dd03fc25d76dcb732a0214c79653da3b130240949b783254d3dfc1b"
+                    ),
+            "TRACKER L1" to
+                (
+                    "update-wio_tracker_l1_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "70fbce0eda9d70d7bd8a4367057badf5ec310838bf3221370d45a56f04956b9e"
+                    ),
+            "WisBlock-RAK4631-Board" to
+                (
+                    "update-wiscore_rak4631_board_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "8741bc677a3c24f28422c5ffb80761de7d98a127a3b0191ba6585bf57ce9f305"
+                    ),
+            "WisMesh-Tag" to
+                (
+                    "update-wismesh_tag_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "96d42e1990e17251e8c625e98a1551cac12c6e29111bc2e59ab7c9fe6dec8758"
+                    ),
+            "nRF52840-SeeedSenseCAPSolarP1-v1" to
+                (
+                    "update-sensecap_solar_p1_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "9b4bce48c1b4830617715c5619457bce6b21f3079803e35e13433de7701290f5"
+                    ),
+            "nRF52840-SeeedXiao-v1" to
+                (
+                    "update-xiao_nrf52840_ble_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "ff8a0916e98cceb394fd66590bccc17f63612c11ff56b086ef88bd436c8df67f"
+                    ),
+            "nRF52840-SeeedXiaoSense-v1" to
+                (
+                    "update-xiao_nrf52840_ble_sense_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "fc233d83a1011419625fcb50b49084578460c25bbc0270374ca176757a3c40da"
+                    ),
+            "nRF52840-T1000-E-v1" to
+                (
+                    "update-t1000_e_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "5c065e11b8acd5b0cefa9295f98bca1512306cfa478856aa76a871124a904cc4"
+                    ),
+            "nRF52840-TEcho-v1" to
+                (
+                    "update-lilygo_techo_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "2ddb36188ffe521c270bb2ce8441d742d0fe45325c57e4db6475bf63162a59b0"
+                    ),
+            "nRF52840-ThinkNode-M3-v1" to
+                (
+                    "update-thinknode_m3_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "bf90979f2f6adc96ef6ca09c280b2ab7e66cb8ce2654fc80da9b20407bfb8708"
+                    ),
+            "nRF52840-ThinkNodeM1-v1" to
+                (
+                    "update-thinknode_m1_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "aa0721b573c60e0b179274d5a5296bac7a8436faf339cfc03116ebe8a4375795"
+                    ),
+            "nRF52840-ThinkNodeM6-v1" to
+                (
+                    "update-thinknode_m6_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "aaf94953a540a18f3e48f4cdec0c78290ad3c5f8740aea26fa3b3ce3632a8d4a"
+                    ),
+            "nRF52840-promicro" to
+                (
+                    "update-promicro_nrf52840_bootloader-0.9.2-OTAFIX2.3-BP1.5_nosd.uf2" to
+                        "46ef3440f151d6f2606075bcd1aa83db25a660da7d25b988aeb47ef350c98794"
+                    ),
+        )
+
+    @Test
+    fun `every otafix board id maps to its exact expected release filename and digest`() {
+        assertEquals(
+            expectedOtafixAssetsByBoardId.keys,
+            testManifest.otafixByBoardId.keys,
+            "This test's expectation table and the shipped board-id map have drifted apart",
+        )
+        expectedOtafixAssetsByBoardId.forEach { (boardId, expected) ->
+            val (expectedFileName, expectedSha256) = expected
+            val image = assertNotNull(otafixUf2ForBoardId(testManifest, boardId), "no image for $boardId")
+            assertEquals(expectedFileName, image.fileName, "$boardId: wrong release filename")
+            assertEquals(expectedSha256, image.sha256, "$boardId: wrong digest")
+        }
+    }
+
+    @Test
+    fun `board id selects the image rather than the build target`() {
+        val rak = otafixUf2ForBoardId(testManifest, "WisBlock-RAK4631-Board")
+        val techo = otafixUf2ForBoardId(testManifest, "nRF52840-TEcho-v1")
+
+        assertNotNull(rak)
+        assertNotNull(techo)
+        assertTrue(rak.fileName.contains("wiscore_rak4631_board"))
+        assertTrue(techo.fileName.contains("lilygo_techo"))
+        // Both boards report USB 239A/0029 in bootloader mode, so USB identity could not have told them apart.
+        assertTrue(rak.sha256 != techo.sha256)
+    }
+
+    @Test
+    fun `xiao sense is distinguished from plain xiao only by board id`() {
+        val plain = otafixUf2ForBoardId(testManifest, "nRF52840-SeeedXiao-v1")
+        val sense = otafixUf2ForBoardId(testManifest, "nRF52840-SeeedXiaoSense-v1")
+
+        assertNotNull(plain)
+        assertNotNull(sense)
+        assertTrue(plain.fileName.contains("xiao_nrf52840_ble_bootloader"))
+        assertTrue(sense.fileName.contains("xiao_nrf52840_ble_sense"))
+        assertTrue(plain.sha256 != sense.sha256, "OTAFIX's README warns these must not be interchanged")
+    }
+
+    @Test
+    fun `an unrecognized board id refuses rather than falling back`() {
+        assertNull(otafixUf2ForBoardId(testManifest, "SomeOtherBoard-v9"))
+        assertNull(otafixUf2ForBoardId(testManifest, ""))
+    }
+
+    // ── Target overrides under a shared Board-ID ─────────────────────────────
+
+    private val overrideManifest =
+        manifestJson.decodeFromString<MaintenanceUf2Manifest>(
+            """
+            {
+              "otafixReleaseTag": "2.6.0",
+              "otafixBase": "https://github.com/meshtastic/nRF52_Bootloader/releases/download/2.6.0",
+              "otafixByBoardId": {
+                "TRACKER L1": {
+                  "otafixBoardSlug": "wio_tracker_l1",
+                  "sha256": "aa",
+                  "targetOverrides": {
+                    "seeed_wio_tracker_L1_Pro_1W": { "otafixBoardSlug": "wio_tracker_l1_pro_1w", "sha256": "bb" }
+                  }
+                },
+                "nRF52840-WioTracker-L1-Pro-1W": { "otafixBoardSlug": "wio_tracker_l1_pro_1w", "sha256": "bb" }
+              }
+            }
+            """
+                .trimIndent(),
+        )
+
+    @Test
+    fun `a target override wins over the shared board id row`() {
+        val image = assertNotNull(otafixUf2ForBoardId(overrideManifest, "TRACKER L1", "seeed_wio_tracker_L1_Pro_1W"))
+
+        assertEquals("update-wio_tracker_l1_pro_1w_bootloader-2.6.0_nosd.uf2", image.fileName)
+        assertEquals("bb", image.sha256)
+    }
+
+    @Test
+    fun `a target override matches the target case-insensitively`() {
+        val image = assertNotNull(otafixUf2ForBoardId(overrideManifest, "TRACKER L1", "seeed_wio_tracker_l1_pro_1w"))
+
+        assertEquals("bb", image.sha256)
+    }
+
+    @Test
+    fun `a target with no override on the row gets the board id image`() {
+        val l1 = assertNotNull(otafixUf2ForBoardId(overrideManifest, "TRACKER L1", "seeed_wio_tracker_L1"))
+        val noTarget = assertNotNull(otafixUf2ForBoardId(overrideManifest, "TRACKER L1"))
+
+        assertEquals("update-wio_tracker_l1_bootloader-2.6.0_nosd.uf2", l1.fileName)
+        assertEquals(l1, noTarget)
+    }
+
+    @Test
+    fun `a target override never resolves an unrecognized board id`() {
+        assertNull(otafixUf2ForBoardId(overrideManifest, "SomeOtherBoard-v9", "seeed_wio_tracker_L1_Pro_1W"))
+    }
+
+    @Test
+    fun `a manifest without target overrides resolves as before`() {
+        assertEquals(
+            otafixUf2ForBoardId(testManifest, "TRACKER L1"),
+            otafixUf2ForBoardId(testManifest, "TRACKER L1", "seeed_wio_tracker_L1_Pro_1W"),
+        )
+    }
+
+    @Test
+    fun `the bootloader upgrade writes the override image for the connected target`() {
+        val choice =
+            chooseMaintenanceImage(
+                overrideManifest,
+                UsbMaintenanceRequest.BootloaderUpgrade,
+                nrf(target = "seeed_wio_tracker_L1_Pro_1W", slug = "SEEED_WIO_TRACKER_L1_PRO_1W"),
+                MaintenanceVolume(boardId = "TRACKER L1", softDevice = SoftDeviceVariant.S140_7_3_0),
+            )
+
+        val resolved = assertIs<MaintenanceImageChoice.Resolved>(choice)
+        assertEquals("update-wio_tracker_l1_pro_1w_bootloader-2.6.0_nosd.uf2", resolved.asset.fileName)
+    }
+
+    @Test
+    fun `board id is parsed from an INFO_UF2 payload and tolerates surrounding lines`() {
+        val info =
+            "UF2 Bootloader 0.9.2-OTAFIX2.2-BP1.3\r\n" +
+                "Model: WisBlock RAK4631 Board\r\n" +
+                "Board-ID: WisBlock-RAK4631-Board\r\n" +
+                "Date: Apr 13 2026\r\n"
+
+        assertEquals("WisBlock-RAK4631-Board", parseUf2BoardId(info))
+        assertNotNull(parseUf2BoardId(info)?.let { otafixUf2ForBoardId(testManifest, it) })
+    }
+
+    @Test
+    fun `a payload without a board id line yields null`() {
+        assertNull(parseUf2BoardId("UF2 Bootloader 0.2.6\r\nModel: Something\r\n"))
+        assertNull(parseUf2BoardId(""), "A volume with no INFO_UF2.TXT is not a UF2 bootloader drive")
+    }
+
+    @Test
+    fun `board id tolerates leading whitespace on its line just like the softdevice line`() {
+        assertEquals("WisBlock-RAK4631-Board", parseUf2BoardId("  Board-ID: WisBlock-RAK4631-Board\r\n"))
+    }
+
+    // ── SoftDevice read from the drive: the authoritative gate (R4) ───────────
+
+    /** Verbatim `INFO_UF2.TXT` from a stock Seeed Wio Tracker L1 (hwModel 99), captured 2026-07-30. */
+    private val seeedL1Info =
+        "UF2 Bootloader 0.9.2-dirty lib/nrfx (v2.0.0) lib/tinyusb (0.12.0-145-g9775e7691) " +
+            "lib/uf2 (remotes/origin/configupdate-9-gadbb8c7)\r\n" +
+            "Model: Seeed TRACKER L1\r\n" +
+            "Board-ID: TRACKER L1\r\n" +
+            "Date: May 15 2025\r\n" +
+            "SoftDevice: S140 7.3.0\r\n"
+
+    @Test
+    fun `softdevice and board id are both read from a real stock bootloader payload`() {
+        assertEquals(SoftDeviceVariant.S140_7_3_0, parseUf2SoftDevice(seeedL1Info))
+        assertEquals("TRACKER L1", parseUf2BoardId(seeedL1Info))
+        // The stock Seeed bootloader reports the same Board-ID as OTAFIX's build for this board.
+        assertNotNull(otafixUf2ForBoardId(testManifest, parseUf2BoardId(seeedL1Info)!!))
+    }
+
+    /** Verbatim `INFO_UF2.TXT` from a RAK4631 running OTAFIX 2.2-BP1.3 (hwModel 9), captured 2026-07-30. */
+    private val rak4631OtafixInfo =
+        "UF2 Bootloader 0.9.2-OTAFIX2.2-BP1.3 lib/nrfx (v2.0.0) lib/tinyusb (0.12.0-145-g9775e7691) " +
+            "lib/uf2 (remotes/origin/configupdate-9-gadbb8c7)\r\n" +
+            "Model: WisBlock RAK4631 Board\r\n" +
+            "Board-ID: WisBlock-RAK4631-Board\r\n" +
+            "Date: Apr 13 2026\r\n" +
+            "SoftDevice: S140 6.1.1\r\n"
+
+    /**
+     * Verbatim `INFO_UF2.TXT` from a RAK4631 on a stock 0.4.3 bootloader (May 2023), captured 2026-07-30.
+     *
+     * Two things this vintage proves: the `SoftDevice:` line goes back at least this far, so the bundled-map fallback
+     * is belt-and-braces rather than the common path; and older bootloaders emit an extra `Ver:` line that 0.9.x
+     * dropped, which the line-scanning parser must tolerate.
+     */
+    private val rak4631StockInfo =
+        "UF2 Bootloader 0.4.3\r\n" +
+            "Model: WisBlock RAK4631 Board\r\n" +
+            "Board-ID: WisBlock-RAK4631-Board\r\n" +
+            "Date: May 20 2023\r\n" +
+            "Ver: 0.4.3\r\n" +
+            "SoftDevice: S140 6.1.1\r\n"
+
+    @Test
+    fun `an old bootloader vintage still reports its softdevice and board id`() {
+        assertEquals(SoftDeviceVariant.S140_6_1_1, parseUf2SoftDevice(rak4631StockInfo))
+        assertEquals("WisBlock-RAK4631-Board", parseUf2BoardId(rak4631StockInfo))
+    }
+
+    @Test
+    fun `board id is stable across bootloader vintages for the same board`() {
+        // A stock 0.4.3 RAK and an OTAFIX 2.2 RAK report the same Board-ID, so the OTAFIX veto resolves correctly on a
+        // device that has never been upgraded — the case that decides whether the upgrade is offerable at all.
+        assertEquals(parseUf2BoardId(rak4631StockInfo), parseUf2BoardId(rak4631OtafixInfo))
+    }
+
+    @Test
+    fun `both variants are parsed from real captured bootloader payloads`() {
+        // The two sides of the split, each from hardware: an OTAFIX RAK4631 and a stock Seeed L1.
+        assertEquals(SoftDeviceVariant.S140_6_1_1, parseUf2SoftDevice(rak4631OtafixInfo))
+        assertEquals(SoftDeviceVariant.S140_7_3_0, parseUf2SoftDevice(seeedL1Info))
+
+        assertEquals("WisBlock-RAK4631-Board", parseUf2BoardId(rak4631OtafixInfo))
+        assertNotNull(
+            otafixUf2ForBoardId(testManifest, parseUf2BoardId(rak4631OtafixInfo)!!),
+            "An OTAFIX-flashed device must still resolve its own image, so re-running the upgrade is idempotent",
+        )
+    }
+
+    @Test
+    fun `softdevice line is parsed for both shipped variants`() {
+        assertEquals(SoftDeviceVariant.S140_6_1_1, parseUf2SoftDevice("SoftDevice: S140 6.1.1\r\n"))
+        assertEquals(SoftDeviceVariant.S140_7_3_0, parseUf2SoftDevice("SoftDevice: S140 7.3.0\r\n"))
+    }
+
+    @Test
+    fun `each erase image targets the app start of the softdevice it is linked for`() {
+        // Verified against hardware 2026-07-30: on a 6.1.1 RAK4631 the app vector table sits at 0x26000
+        // (sp=0x20040000, top of nRF52840 RAM), and 0x27000 is mid-application. On a 7.3.0 device the app starts at
+        // 0x27000, which makes 0x26000 the SoftDevice's last page — the direction that corrupts.
+        val six = assertNotNull(eraseUf2ForVariant(testManifest, SoftDeviceVariant.S140_6_1_1))
+        val seven = assertNotNull(eraseUf2ForVariant(testManifest, SoftDeviceVariant.S140_7_3_0))
+        assertEquals(0x26000L, six.expectedFirstTargetAddress)
+        assertEquals(0x27000L, seven.expectedFirstTargetAddress)
+    }
+
+    @Test
+    fun `unsupported softdevice ids and absent lines yield null`() {
+        assertNull(parseUf2SoftDevice("SoftDevice: S132 7.3.0\r\n"), "S132 is not an nRF52840 SoftDevice")
+        assertNull(parseUf2SoftDevice("SoftDevice: S140 9.9.9\r\n"), "No erase image exists for an unknown version")
+        assertNull(parseUf2SoftDevice("SoftDevice: \r\n"), "The bootloader omits the value when no SD is installed")
+        assertNull(parseUf2SoftDevice("Board-ID: TRACKER L1\r\n"), "Absent line")
+    }
+
+    @Test
+    fun `the drive outranks the bundled map`() {
+        // The map says 6.1.1, the device says 7.3.0 with nothing else to go on — but they disagree, so refuse.
+        val conflict =
+            resolveNrfEraseImage(
+                testManifest,
+                mapped = SoftDeviceVariant.S140_6_1_1,
+                reportedFromDrive = SoftDeviceVariant.S140_7_3_0,
+            )
+        assertTrue(conflict is EraseImageResolution.Conflict, "Disagreement must refuse, not pick a side")
+    }
+
+    @Test
+    fun `agreement resolves to the reported variant's image`() {
+        val resolved =
+            resolveNrfEraseImage(
+                testManifest,
+                mapped = SoftDeviceVariant.S140_7_3_0,
+                reportedFromDrive = SoftDeviceVariant.S140_7_3_0,
+            )
+
+        assertTrue(resolved is EraseImageResolution.Resolved)
+        assertEquals("nrf_erase_sd7_3.uf2", resolved.asset.fileName)
+        assertEquals(0x27000L, resolved.asset.expectedFirstTargetAddress)
+    }
+
+    @Test
+    fun `an old bootloader with no softdevice line falls back to the bundled map`() {
+        val resolved =
+            resolveNrfEraseImage(testManifest, mapped = SoftDeviceVariant.S140_6_1_1, reportedFromDrive = null)
+
+        assertTrue(resolved is EraseImageResolution.Resolved)
+        assertEquals("nrf_erase2.uf2", resolved.asset.fileName)
+    }
+
+    @Test
+    fun `a drive report rescues an unmapped model`() {
+        // THINKNODE_M8 has no firmware variant on master and so no map row; the drive can still answer.
+        val resolved =
+            resolveNrfEraseImage(testManifest, mapped = null, reportedFromDrive = SoftDeviceVariant.S140_6_1_1)
+
+        assertTrue(resolved is EraseImageResolution.Resolved)
+        assertEquals(SoftDeviceVariant.S140_6_1_1, resolved.variant)
+    }
+
+    @Test
+    fun `neither source resolving means unresolved`() {
+        assertEquals(
+            EraseImageResolution.Unresolved,
+            resolveNrfEraseImage(testManifest, mapped = null, reportedFromDrive = null),
+        )
+    }
+
+    // ── UF2 header parsing (R8) ──────────────────────────────────────────────
+
+    @Test
+    fun `uf2 target address is read from the first block`() {
+        val block = ByteArray(UF2_BLOCK_BYTES)
+        listOf(0x55, 0x46, 0x32, 0x0A).forEachIndexed { i, b -> block[i] = b.toByte() }
+        block[UF2_TARGET_ADDR_OFFSET] = 0x00
+        block[UF2_TARGET_ADDR_OFFSET + 1] = 0x70
+        block[UF2_TARGET_ADDR_OFFSET + 2] = 0x02
+        block[UF2_TARGET_ADDR_OFFSET + 3] = 0x00
+
+        assertEquals(0x27000L, uf2FirstTargetAddress(block))
+    }
+
+    @Test
+    fun `non-uf2 payloads yield no target address`() {
+        assertNull(uf2FirstTargetAddress(ByteArray(UF2_BLOCK_BYTES)), "Zeroed bytes carry no UF2 magic")
+        assertNull(uf2FirstTargetAddress(ByteArray(16)), "A short payload cannot hold a UF2 block")
+    }
+
+    // ── Bootloader-driven factory erase (OTAFIX PR #41) ──────────────────────
+
+    /** The family OTAFIX advertises and consumes: 0x4D455348, "MESH" little-endian. */
+    private val meshFamily = 0x4D455348L
+
+    private val rakOtafixEraseInfo =
+        "UF2 Bootloader 0.9.2-OTAFIX2.3-BP1.6\r\nModel: WisBlock RAK4631 Board\r\n" +
+            "Board-ID: WisBlock-RAK4631-Board\r\nDate: Sep  6 2026\r\nSoftDevice: S140 7.3.0\r\n" +
+            "Factory-Erase: UF2 family 0x4D455348\r\n"
+
+    @Test
+    fun `the manifest decodes the bootloader erase entry with its family id`() {
+        val entry = assertNotNull(testManifest.erase?.nrf52Bootloader, "the shipped manifest carries the entry")
+
+        assertEquals("meshtastic_factory_erase.uf2", entry.fileName)
+        assertEquals(meshFamily, entry.expectedFamilyId, "1296388936 decimal in the manifest is 0x4D455348")
+        assertNull(entry.expectedFirstTargetAddress, "targetAddr is 0 by design; no address invariant is authored")
+    }
+
+    @Test
+    fun `factory erase family is parsed from the bootloader's own line`() {
+        assertEquals(meshFamily, parseUf2FactoryEraseFamily(rakOtafixEraseInfo))
+        assertEquals(meshFamily, parseUf2FactoryEraseFamily("Factory-Erase: UF2 family 0x4D455348"), "no CRLF")
+    }
+
+    @Test
+    fun `factory erase family parsing tolerates case and leading whitespace like its siblings`() {
+        assertEquals(meshFamily, parseUf2FactoryEraseFamily("  factory-erase: uf2 family 0X4d455348\r\n"))
+    }
+
+    @Test
+    fun `factory erase family takes the last hex token on the line`() {
+        assertEquals(0xDEADBEEFL, parseUf2FactoryEraseFamily("Factory-Erase: UF2 family 0x1234 0xDEADBEEF\r\n"))
+    }
+
+    @Test
+    fun `a different factory erase family still parses so the resolver can refuse it`() {
+        assertEquals(0xDEADBEEFL, parseUf2FactoryEraseFamily("Factory-Erase: UF2 family 0xDEADBEEF\r\n"))
+    }
+
+    @Test
+    fun `last fault is parsed from the line ghostfat prints`() {
+        assertEquals(
+            BootloaderFault(id = 0x1001, pc = 0x26a1c, info = 0x8),
+            parseUf2LastFault(rakOtafixEraseInfo + "Last-Fault: id=0x1001 pc=0x26a1c info=0x8\r\n"),
+        )
+    }
+
+    @Test
+    fun `last fault keeps zero and full width words as readings`() {
+        assertEquals(
+            BootloaderFault(id = 0x0, pc = 0xFFFFFFFFL, info = 0x0),
+            parseUf2LastFault("Last-Fault: id=0x0 pc=0xffffffff info=0x0"),
+        )
+    }
+
+    @Test
+    fun `last fault parsing tolerates case and leading whitespace like its siblings`() {
+        assertEquals(
+            BootloaderFault(id = 0xAB, pc = 0xCD, info = 0xEF),
+            parseUf2LastFault("  last-fault: ID=0XAB PC=0xcd Info=0xEF\r\n"),
+        )
+    }
+
+    @Test
+    fun `last fault prints back in the bootloader's own form`() {
+        val line = "id=0x1001 pc=0x26a1c info=0x0"
+
+        assertEquals(line, parseUf2LastFault("Last-Fault: $line")?.toString())
+    }
+
+    @Test
+    fun `an absent or malformed last fault line yields no fault`() {
+        assertNull(parseUf2LastFault(rakOtafixEraseInfo), "A healthy drive or a pre-2.6.0 bootloader omits the line")
+        assertNull(parseUf2LastFault("Last-Fault: id=0x1 pc=0x2\r\n"), "Missing info")
+        assertNull(parseUf2LastFault("Last-Fault: id=0x1 pc=2 info=0x3\r\n"), "Not 0x-prefixed")
+        assertNull(parseUf2LastFault("Last-Fault: id=0x1 pc=0xZZ info=0x3\r\n"), "Not hex")
+        assertNull(parseUf2LastFault("Last-Fault: id=0x1 pc=0x100000000 info=0x3\r\n"), "Wider than 32 bits")
+        assertNull(parseUf2LastFault(""), "Empty payload")
+    }
+
+    @Test
+    fun `an absent or malformed factory erase line yields no family`() {
+        assertNull(parseUf2FactoryEraseFamily(rak4631OtafixInfo), "Every bootloader before PR #41 omits the line")
+        assertNull(parseUf2FactoryEraseFamily("Factory-Erase: UF2 family\r\n"), "No token at all")
+        assertNull(parseUf2FactoryEraseFamily("Factory-Erase: UF2 family 4D455348\r\n"), "Not 0x-prefixed")
+        assertNull(parseUf2FactoryEraseFamily("Factory-Erase: UF2 family 0xZZZZ\r\n"), "Not hex")
+        assertNull(parseUf2FactoryEraseFamily("Factory-Erase: 0x\r\n"), "Prefix with nothing after it")
+        assertNull(parseUf2FactoryEraseFamily(""), "Empty payload")
+    }
+
+    @Test
+    fun `bootloader erase image resolves when the volume advertises the manifest family`() {
+        val asset = assertNotNull(bootloaderEraseUf2For(testManifest, meshFamily))
+
+        assertEquals("meshtastic_factory_erase.uf2", asset.fileName)
+        assertEquals(meshFamily, asset.expectedFamilyId)
+        assertNull(asset.expectedFirstTargetAddress, "The address check would reject a targetAddr of 0")
+        assertFalse(asset.requiresCdcUnblock, "The bootloader consumes the block itself; there is no sketch to unblock")
+        assertTrue(asset.url.endsWith("resource/maintenanceUf2/asset/meshtastic_factory_erase.uf2"))
+    }
+
+    @Test
+    fun `bootloader erase image refuses a volume advertising another family or none`() {
+        assertNull(bootloaderEraseUf2For(testManifest, 0xDEADBEEFL), "Wrong family must fall through to the sketch")
+        assertNull(bootloaderEraseUf2For(testManifest, null), "No line means the bootloader ignores the file")
+    }
+
+    @Test
+    fun `bootloader erase image refuses when the manifest cannot vouch for a family`() {
+        val withoutEntry = testManifest.copy(erase = testManifest.erase?.copy(nrf52Bootloader = null))
+        assertNull(bootloaderEraseUf2For(withoutEntry, meshFamily), "Older manifests carry no entry")
+
+        val unverifiable =
+            testManifest.copy(
+                erase =
+                testManifest.erase?.copy(
+                    nrf52Bootloader = testManifest.erase?.nrf52Bootloader?.copy(expectedFamilyId = null),
+                ),
+            )
+        assertNull(bootloaderEraseUf2For(unverifiable, meshFamily), "No expected family means no byte-level check")
+        assertNull(bootloaderEraseUf2For(MaintenanceUf2Manifest(), meshFamily), "No erase set at all")
+    }
+
+    @Test
+    fun `an unsafe bootloader erase filename refuses the image instead of throwing`() {
+        val unsafe =
+            testManifest.copy(
+                erase =
+                testManifest.erase?.copy(
+                    nrf52Bootloader = testManifest.erase?.nrf52Bootloader?.copy(fileName = "../erase.uf2"),
+                ),
+            )
+
+        assertNull(bootloaderEraseUf2For(unsafe, meshFamily))
+    }
+
+    @Test
+    fun `only the softdevice erase sketches need a cdc unblock`() {
+        assertTrue(assertNotNull(eraseUf2For(testManifest, nrf())).requiresCdcUnblock)
+        assertTrue(assertNotNull(eraseUf2ForVariant(testManifest, SoftDeviceVariant.S140_7_3_0)).requiresCdcUnblock)
+        assertFalse(assertNotNull(eraseUf2For(testManifest, rp2040())).requiresCdcUnblock, "pico_erase runs on its own")
+        assertFalse(
+            assertNotNull(otafixUf2ForBoardId(testManifest, "WisBlock-RAK4631-Board")).requiresCdcUnblock,
+            "A bootloader self-update is consumed by the bootloader",
+        )
+    }
+
+    // ── UF2 family ID header parsing ─────────────────────────────────────────
+
+    private fun uf2Block(flags: Long, familyId: Long): ByteArray {
+        val block = ByteArray(UF2_BLOCK_BYTES)
+        fun putLe32(offset: Int, value: Long) {
+            for (i in 0 until 4) block[offset + i] = ((value shr (8 * i)) and 0xFF).toByte()
+        }
+        putLe32(0, 0x0A324655L)
+        putLe32(UF2_FLAGS_OFFSET, flags)
+        putLe32(UF2_FAMILY_ID_OFFSET, familyId)
+        return block
+    }
+
+    @Test
+    fun `uf2 family id is read from the first block when the family flag is set`() {
+        assertEquals(meshFamily, uf2FamilyId(uf2Block(flags = UF2_FLAG_FAMILY_ID, familyId = meshFamily)))
+        assertEquals(
+            meshFamily,
+            uf2FamilyId(uf2Block(flags = UF2_FLAG_FAMILY_ID or 0x1L, familyId = meshFamily)),
+            "Other flag bits do not matter",
+        )
+    }
+
+    @Test
+    fun `uf2 family id is absent when the family flag is clear`() {
+        // Without 0x2000 the word at offset 28 is a file size, and reading it as an identity would be a false match.
+        assertNull(uf2FamilyId(uf2Block(flags = 0L, familyId = meshFamily)))
+    }
+
+    @Test
+    fun `non-uf2 payloads yield no family id`() {
+        assertNull(uf2FamilyId(ByteArray(UF2_BLOCK_BYTES)), "Zeroed bytes carry no UF2 magic")
+        assertNull(uf2FamilyId(ByteArray(32)), "A short payload cannot hold a UF2 block")
+    }
+
+    // ── Installed bootloader version against the release ─────────────────────
+
+    /**
+     * The `INFO_UF2.TXT` text embedded in the released `update-wismesh_tag_bootloader-0.9.2-OTAFIX2.5_nosd.uf2`,
+     * extracted from its UF2 payload. The running bootloader appends its `SoftDevice:` line to this at boot.
+     */
+    private val wismeshTagOtafix25Info =
+        "UF2 Bootloader 0.9.2-OTAFIX2.5 lib/nrfx (v3.14.0) lib/tinyusb (0.21.0-435-g3898a1df4) " +
+            "lib/uf2 (heads/master)\r\n" +
+            "Model: WisMesh Tag\r\nBoard-ID: WisMesh-Tag\r\nDate: Sep  8 2026\r\n" +
+            "Factory-Erase: UF2 family 0x4D455348\r\n"
+
+    private fun volumeFrom(info: String) = MaintenanceVolume(
+        boardId = assertNotNull(parseUf2BoardId(info)),
+        softDevice = parseUf2SoftDevice(info),
+        bootloaderVersion = parseUf2BootloaderVersion(info),
+    )
+
+    @Test
+    fun `bootloader version is the first token of the uf2 bootloader line on every known vintage`() {
+        assertEquals("0.4.3", parseUf2BootloaderVersion(rak4631StockInfo))
+        assertEquals("0.9.2-OTAFIX2.2-BP1.3", parseUf2BootloaderVersion(rak4631OtafixInfo))
+        assertEquals("0.9.2-dirty", parseUf2BootloaderVersion(seeedL1Info), "stock Seeed builds carry git's suffix")
+        assertEquals("0.9.2-OTAFIX2.3-BP1.6", parseUf2BootloaderVersion(rakOtafixEraseInfo))
+        assertEquals("0.9.2-OTAFIX2.5", parseUf2BootloaderVersion(wismeshTagOtafix25Info))
+    }
+
+    @Test
+    fun `bootloader version falls back to the ver line and is null when neither line is present`() {
+        assertEquals("0.4.3", parseUf2BootloaderVersion("Board-ID: WisBlock-RAK4631-Board\r\nVer: 0.4.3\r\n"))
+        assertNull(parseUf2BootloaderVersion("Board-ID: WisBlock-RAK4631-Board\r\n"))
+        assertNull(parseUf2BootloaderVersion("UF2 Bootloader \r\nBoard-ID: X\r\n"), "an empty version is no version")
+        assertNull(parseUf2BootloaderVersion(""))
+    }
+
+    @Test
+    fun `the released bootloader reads as current against its own release tag`() {
+        val manifest = testManifest.copy(otafixReleaseTag = "0.9.2-OTAFIX2.5")
+
+        val review = assertIs<BootloaderReview.Ready>(reviewBootloader(manifest, volumeFrom(wismeshTagOtafix25Info)))
+
+        assertEquals(BootloaderVersions(installed = "0.9.2-OTAFIX2.5", available = "0.9.2-OTAFIX2.5"), review.versions)
+        assertTrue(review.versions.isCurrent)
+    }
+
+    @Test
+    fun `any other installed version reads as not current without claiming an order`() {
+        // testManifest is on BP1.5; BP1.6 is a bench build newer than it, and still only "different".
+        for (info in listOf(rak4631StockInfo, rak4631OtafixInfo, rakOtafixEraseInfo, wismeshTagOtafix25Info)) {
+            val review = assertIs<BootloaderReview.Ready>(reviewBootloader(testManifest, volumeFrom(info)))
+            assertFalse(review.versions.isCurrent, "installed ${review.versions.installed}")
+            assertEquals("0.9.2-OTAFIX2.3-BP1.5", review.versions.available)
+        }
+    }
+
+    @Test
+    fun `a drive reporting no version is never current`() {
+        val volume = MaintenanceVolume(boardId = "WisMesh-Tag", softDevice = null, bootloaderVersion = null)
+
+        val review = assertIs<BootloaderReview.Ready>(reviewBootloader(testManifest, volume))
+
+        assertNull(review.versions.installed)
+        assertFalse(BootloaderVersions(installed = null, available = "").isCurrent, "two unknowns are not a match")
+        assertFalse(review.versions.isCurrent)
+    }
+
+    @Test
+    fun `review refuses an unrecognized board id before anything is downloaded`() {
+        val volume = MaintenanceVolume(boardId = "SomeOtherBoard-v9", softDevice = null, bootloaderVersion = "0.9.2")
+
+        assertEquals(
+            BootloaderReview.Refused(UsbMaintenanceRefusal.UnknownBoardId),
+            reviewBootloader(testManifest, volume),
+        )
+    }
+
+    @Test
+    fun `the gate carries the latest bootloader only where the upgrade is offered`() {
+        val offered = maintenanceGate(testManifest, nrf(), FirmwareUpdateMethod.Usb, hasRelease = true)
+        assertEquals("0.9.2-OTAFIX2.3-BP1.5", offered.latestBootloader)
+
+        val unsupported = maintenanceGate(testManifest, nrf(target = "wio-sdk-wm1110"), FirmwareUpdateMethod.Usb, true)
+        assertFalse(unsupported.showBootloaderUpgrade)
+        assertNull(unsupported.latestBootloader)
+
+        assertNull(maintenanceGate(testManifest, rp2040(), FirmwareUpdateMethod.Usb, true).latestBootloader)
+        assertNull(
+            maintenanceGate(MaintenanceUf2Manifest(), nrf(), FirmwareUpdateMethod.Usb, true).latestBootloader,
+            "no manifest, no version to show",
+        )
+    }
+}

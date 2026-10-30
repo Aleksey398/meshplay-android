@@ -1,0 +1,518 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (c) 2025 Meshtastic LLC
+  ~
+  ~ This program is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by
+  ~ the Free Software Foundation, either version 3 of the License, or
+  ~ (at your option) any later version.
+  ~
+  ~ This program is distributed in the hope that it will be useful,
+  ~ but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~ GNU General Public License for more details.
+  ~
+  ~ You should have received a copy of the GNU General Public License
+  ~ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+<resources>
+    <!-- A11Y -->
+    <string name="a11y_humidity">습도</string>
+    <string name="a11y_temperature">온도</string>
+    <string name="about">앱에 대하여</string>
+    <string name="accept">수락</string>
+    <!-- ACTION -->
+    <string name="actions">작업</string>
+    <!-- ADD -->
+    <string name="add">추가</string>
+    <string name="add_network_device">추가</string>
+    <string name="address">서버 주소</string>
+    <string name="administration">관리</string>
+    <string name="advanced">고급</string>
+    <string name="advanced_title">고급</string>
+    <!-- AIR -->
+    <string name="air_util_definition">지난 1시간 동안 전송에 사용된 통신 시간의 백분율.</string>
+    <string name="alert_bell_text">알람 종 문자!</string>
+    <string name="all_time">All</string>
+    <string name="allow_input_source">입력 소스 허용</string>
+    <string name="alt">고도</string>
+    <string name="ambient_lighting">조명</string>
+    <string name="ambient_lighting_config">조명 설정</string>
+    <!-- APP -->
+    <string name="app_too_old">앱 업데이트가 필요합니다.</string>
+    <string name="apply">적용</string>
+    <!-- AQI -->
+    <string name="aqi_good">좋음</string>
+    <string name="are_you_sure">확실합니까?</string>
+    <string name="are_you_sure_change_default">기본 채널로 변경하시겠습니까?</string>
+    <string name="audio">오디오</string>
+    <string name="audio_config">오디오 설정</string>
+    <string name="bad">나쁨</string>
+    <string name="battery">배터리</string>
+    <!-- BLUETOOTH -->
+    <string name="bluetooth">블루투스</string>
+    <string name="bluetooth_config">블루투스 설정</string>
+    <string name="bluetooth_feature_config">설정</string>
+    <string name="bluetooth_permission">블루투스</string>
+    <string name="bottom_nav_settings">설정</string>
+    <string name="calculating">계산 중...</string>
+    <string name="camera_permission">카메라 권한 부여</string>
+    <string name="cancel">취소</string>
+    <string name="canned_message">빠른 답장 문구</string>
+    <string name="canned_message_config">빠른 답장 문구 설정</string>
+    <string name="canned_message_enabled">빠른 답장 활성화</string>
+    <string name="cant_change_no_radio">장치가 연결되지않아 채널을 변경할 수 없습니다. 다시 시도해주세요.</string>
+    <string name="cant_shutdown">종료 기능이 이 장치에서 지원되지 않습니다</string>
+    <string name="ch_util_definition">현재 채널 사용, 올바르게 형성된 TX, RX, 잘못 형성된 RX(일명 노이즈)를 포함.</string>
+    <!-- CHANNEL -->
+    <string name="channel_1">채널 1</string>
+    <string name="channel_2">채널 2</string>
+    <string name="channel_3">채널 3</string>
+    <string name="channel_4">채널 4</string>
+    <string name="channel_5">채널 5</string>
+    <string name="channel_6">채널 6</string>
+    <string name="channel_7">채널 7</string>
+    <string name="channel_8">채널 8</string>
+    <string name="channel_invalid">이 채널 URL은 유효하지 않으며 사용할 수 없습니다.</string>
+    <string name="channel_name">채널명</string>
+    <string name="channels">채널</string>
+    <!-- CHIRPY -->
+    <string name="choose_theme">테마 선택</string>
+    <!-- CLEAN -->
+    <!-- CLEAR -->
+    <string name="clear">삭제</string>
+    <string name="client_notification">클라이언트 알림</string>
+    <string name="close">닫기</string>
+    <!-- COMPASS -->
+    <string name="compass_north_top">나침반 상단을 북쪽으로 고정</string>
+    <string name="compromised_keys">손상된 키가 감지되었습니다. 다시 생성하려면 OK를 선택하세요.</string>
+    <!-- CONFIG -->
+    <string name="config_device_ledHeartbeatEnabled_summary">장치에서 깜빡이는 LED를 제어합니다. 대부분 장치의 경우 최대 4개의 LED 중 하나를 제어할 수 있지만 충전 상태 LED와 GPS 상태 LED는 제어할 수 없습니다.</string>
+    <string name="configuration">설정</string>
+    <string name="connect">연결</string>
+    <string name="connected">연결됨</string>
+    <string name="connected_sleeping">연결되었지만, 해당 장치는 절전모드입니다.</string>
+    <string name="connecting">연결 중</string>
+    <string name="connections">연결</string>
+    <string name="copy">복사</string>
+    <string name="critical_alert">중요 경고!</string>
+    <string name="current">전류</string>
+    <string name="date">날짜</string>
+    <string name="date_separator_today">오늘</string>
+    <string name="date_separator_yesterday">어제</string>
+    <!-- DEBUG -->
+    <string name="debug">Debug</string>
+    <string name="debug_clear">로그 지우기</string>
+    <string name="debug_filters">필터</string>
+    <string name="debug_logs_export">로그 내보내기</string>
+    <string name="debug_panel">디버그 패널</string>
+    <string name="default_">기본값</string>
+    <!-- DELETE -->
+    <string name="delete">삭제</string>
+    <string name="delete_for_everyone">모두에게서 삭제</string>
+    <string name="delete_for_me">나에게서 삭제</string>
+    <plurals name="delete_messages">
+        <item quantity="other">%1$s개의 메세지를 삭제하시겠습니까?</item>
+    </plurals>
+    <string name="delivery_confirmed">발송 확인 됨</string>
+    <string name="desc_node_filter_clear">노드 필터 지우기</string>
+    <string name="description">설명</string>
+    <!-- DESKTOP -->
+    <string name="desktop_notification_title">Meshtastic</string>
+    <string name="details">세부 정보</string>
+    <string name="detection_sensor">감지 센서</string>
+    <string name="detection_sensor_config">감지 센서 설정</string>
+    <!-- DEVICE -->
+    <string name="device">장치</string>
+    <string name="device_sleeping">절전모드</string>
+    <string name="dew_point">이슬점</string>
+    <string name="direct_message">다이렉트 메시지</string>
+    <string name="disconnect">연결 끊기</string>
+    <string name="disconnected">연결 끊김</string>
+    <!-- DISCOVERY -->
+    <string name="discovery_stat_date">날짜</string>
+    <string name="discovery_stat_direct">직접 연결</string>
+    <string name="discovery_stat_messages">메시지기기</string>
+    <string name="display">화면</string>
+    <!-- DISTANCE -->
+    <string name="distance">거리</string>
+    <!-- DOC -->
+    <string name="doc_title_mqtt">MQTT</string>
+    <string name="doc_title_nodes">노드</string>
+    <string name="download">다운로드</string>
+    <!-- DURATION -->
+    <string name="edit">편집</string>
+    <string name="eight_hours">8 시간</string>
+    <!-- EMOJI -->
+    <string name="enabled">활성화</string>
+    <string name="encryption_error">공개 키가 일치하지 않습니다</string>
+    <string name="encryption_pkc">공개 키 암호화</string>
+    <string name="environment">환경</string>
+    <string name="error">오류</string>
+    <string name="error_duty_cycle">듀티 사이클 제한에 도달했습니다. 지금은 메시지를 보낼 수 없습니다. 나중에 다시 시도하세요.</string>
+    <string name="exchange_position">위치 교환</string>
+    <string name="expires">만료</string>
+    <!-- EXPORT -->
+    <string name="export_configuration">설정 내보내기</string>
+    <string name="external_notification">외부 알림</string>
+    <string name="external_notification_config">외부 알림 설정</string>
+    <string name="factory_reset">공장초기화</string>
+    <string name="fair">보통</string>
+    <string name="fallback_node_name">Meshtastic %1$s</string>
+    <string name="favorite">즐겨찾기</string>
+    <string name="favorite_add">'%1$s'를 즐겨찾기 하시겠습니까?</string>
+    <string name="favorite_remove">'%1$s'를 즐겨찾기 취소하시겠습니까?</string>
+    <!-- FILTER -->
+    <string name="filter_icon">필터</string>
+    <!-- FIRMWARE -->
+    <string name="firmware">펌웨어</string>
+    <string name="firmware_gate_title">펌웨어 업데이트 필요</string>
+    <string name="firmware_old">이 장치의 펌웨어가 매우 오래되어 이 앱과 호환되지않습니다. 더 자세한 정보는 <a href="https://meshtastic.org/docs/getting-started/flashing-firmware">펌웨어 업데이트 가이드를</a> 참고해주세요.</string>
+    <string name="firmware_too_old">펌웨어 업데이트가 필요합니다.</string>
+    <string name="firmware_update_failed">업데이트 실패</string>
+    <!-- FORMAT -->
+    <string name="freq">주파수</string>
+    <string name="gas_resistance">가스 저항</string>
+    <!-- GEOFENCE -->
+    <string name="good">좋음</string>
+    <string name="gpio_pin">GPIO 핀</string>
+    <string name="hardware">하드웨어</string>
+    <string name="hardware_model">하드웨어 모델</string>
+    <string name="heading">제목</string>
+    <string name="hide_password">비밀번호 숨김</string>
+    <string name="hops_away">Hops 수</string>
+    <string name="i_agree">동의합니다.</string>
+    <string name="i_agree_to_share_my_location">위 내용을 읽고 이해했습니다. 저는 MQTT를 통해 제 노드 데이터를 암호화되지 않은 상태로 전송하는 것에 자발적으로 동의합니다.</string>
+    <string name="i_know_what_i_m_doing">뭘하는지 알고 있습니다</string>
+    <!-- IAQ -->
+    <string name="iaq">IAQ</string>
+    <string name="iaq_definition">(실내공기질) Bosch BME680으로 측정한 상대적 척도 IAQ 값. 범위 0–500.</string>
+    <string name="iaq_level_good">좋음</string>
+    <string name="ignore">무시하기</string>
+    <string name="ignore_add">%1$s를 무시 목록에 추가하시겠습니까?</string>
+    <string name="ignore_incoming">수신 무시</string>
+    <string name="ignore_remove">%1$s를 무시 목록에서 삭제하시겠습니까?</string>
+    <!-- IMPORT -->
+    <string name="import_configuration">설정 불러오기</string>
+    <string name="import_known_shared_contact_text">경고: 이 연락처는 이미 등록되어 있습니다. 내려받으면 이전 연락처 정보가 덮어쓰어질 수 있습니다.</string>
+    <string name="import_label">불러오기</string>
+    <string name="import_shared_contact">공유된 연락처를 내려받겠습니까?</string>
+    <string name="indoor_air_quality_iaq">실내공기질 (IAQ)</string>
+    <string name="info">정보</string>
+    <string name="interval_unset">해제</string>
+    <string name="intro_show">기능 소개</string>
+    <string name="ip">IP</string>
+    <string name="ip_address">IP 주소:</string>
+    <string name="ip_port">포트:</string>
+    <string name="json_output_enabled">JSON 사용</string>
+    <!-- KEY -->
+    <string name="last_position_update">최근 위치 업데이트</string>
+    <string name="latitude">위도</string>
+    <!-- LAYER -->
+    <!-- LICENSED -->
+    <string name="licensed_amateur_radio_text">이 옵션을 활성화하면 암호화가 비활성화되며 기본 Meshtastic 네트워크와 호환되지 않습니다.</string>
+    <!-- LIVE -->
+    <string name="live_update_direct">직접 연결</string>
+    <!-- LOAD -->
+    <!-- LOCAL -->
+    <!-- LOCATION -->
+    <string name="location_disabled">위치 접근 권한 해제, 메시에 위치를 제공할 수 없습니다.</string>
+    <!-- LOCKDOWN -->
+    <string name="lockdown_hide_passphrase">숨기기</string>
+    <string name="lockdown_submit">제출</string>
+    <string name="locked">잠김</string>
+    <!-- LOG -->
+    <string name="logs">로그</string>
+    <string name="long_name">긴 이름</string>
+    <string name="longitude">경도</string>
+    <!-- LORA -->
+    <string name="lora">LoRa</string>
+    <string name="lora_config">LoRa</string>
+    <string name="low_battery_message">%1$s 노드의 배터리가 낮습니다. (%2$d%)</string>
+    <string name="low_battery_title">배터리  부족: %1$s</string>
+    <string name="lux">조도</string>
+    <string name="manual_position_request">수동 위치 요청 필요함</string>
+    <!-- MAP -->
+    <string name="map_cache_manager">캐시 관리자</string>
+    <string name="map_cache_size">현재 캐시 크기</string>
+    <string name="map_cache_tiles">%1$d 타일</string>
+    <string name="map_clear_tiles">다운로드한 타일 지우기</string>
+    <string name="map_download_complete">다운로드 완료!</string>
+    <string name="map_download_errors">%1$d 에러로 다운로드 완료되지 않았습니다.</string>
+    <string name="map_download_region">다운로드 지역</string>
+    <string name="map_filter">맵 필터\n</string>
+    <string name="map_filter_all_roles">All</string>
+    <string name="map_filter_display_title">화면</string>
+    <string name="map_filter_nodes_title">노드</string>
+    <string name="map_offline_manager">오프라인 관리자</string>
+    <string name="map_purge_fail">SQL 캐시 제거 실패, 자세한 내용은 logcat 참조</string>
+    <string name="map_purge_success">%1$s에 대한 SQL 캐시가 제거되었습니다.</string>
+    <string name="map_reporting_consent_header">MQTT를 통해 암호화되지 않은 노드 데이터를 공유하는 데 동의합니다.</string>
+    <string name="map_reporting_consent_text">이 기능을 활성화함으로써, 귀하는 귀하의 장치의 실시간 지리적 위치가 MQTT 프로토콜을 통해 암호화 없이 전송되는 것을 인지하고 동의합니다. 이 위치 데이터는 실시간 지도 보고, 장치 추적, 관련 텔레메트리 기능 등과 같은 목적으로 사용될 수 있습니다.</string>
+    <string name="map_select_download_region">다운로드 지역 선택</string>
+    <string name="map_start_download">다운로드 시작</string>
+    <string name="map_subDescription">방위: %1$d° 거리: %2$s</string>
+    <string name="map_tile_download_estimate">맵 타일 다운로드 예상:</string>
+    <string name="map_tile_source">타일 소스</string>
+    <string name="max">최대</string>
+    <!-- MESH -->
+    <string name="mesh_beacon_offer_dismiss">취소</string>
+    <string name="mesh_beacon_preset_none">없음</string>
+    <string name="mesh_beacon_region_label">지역</string>
+    <string name="mesh_beacon_target_channel_index">채널</string>
+    <string name="mesh_beacon_target_default">기본값</string>
+    <!-- MESHTASTIC -->
+    <string name="meshtastic">Meshtastic</string>
+    <string name="meshtastic_alerts_notifications">경고 알림</string>
+    <string name="meshtastic_app_name">Meshtastic</string>
+    <string name="meshtastic_broadcast_notifications">메시지 발송 알림</string>
+    <string name="meshtastic_low_battery_notifications">배터리 부족 알림</string>
+    <string name="meshtastic_low_battery_temporary_remote_notifications">배터리 부족 알림 (즐겨찾기 노드)</string>
+    <string name="meshtastic_messages_notifications">DM 알림</string>
+    <string name="meshtastic_new_nodes_notifications">새로운 노드 알림</string>
+    <string name="meshtastic_service_notifications">서비스 알림</string>
+    <!-- MESSAGE -->
+    <string name="message">메시지</string>
+    <string name="message_delivery_status">메시지 전송 상태</string>
+    <string name="message_input_label">메시지</string>
+    <string name="message_status_queued">전송 대기 열에 추가됨</string>
+    <string name="message_status_unknown">알 수 없는</string>
+    <string name="messages">메시지기기</string>
+    <!-- MIRROR -->
+    <string name="mirror_key_ok">확인</string>
+    <string name="module_settings">모듈 설정</string>
+    <string name="modules_unlocked">모듈 잠금해제</string>
+    <!-- MQTT -->
+    <string name="mqtt">MQTT</string>
+    <string name="mqtt_config">MQTT 설정</string>
+    <string name="mqtt_status_connected">연결됨</string>
+    <string name="mqtt_status_disconnected">연결 끊김</string>
+    <string name="mqtt_topic_finder_level_region">지역</string>
+    <string name="must_set_region">지역을 설정해 주세요!</string>
+    <string name="must_update">구글 플레이 스토어 또는 깃허브를 통해서 앱을 업데이트 해야합니다. 앱이 너무 구버전입니다. 이 주제의  <a href="https://meshtastic.org/docs/software/android/installation">docs</a> 를 읽어주세요</string>
+    <!-- MUTE -->
+    <string name="mute_1_week">1 주</string>
+    <string name="mute_8_hours">8 시간</string>
+    <string name="mute_always">항상</string>
+    <string name="mute_notifications">알림 끄기</string>
+    <string name="name">이름</string>
+    <string name="navigate_back">뒤로 가기</string>
+    <string name="neighbor_info">이웃 정보</string>
+    <string name="neighbor_info_config">이웃 정보 설정</string>
+    <string name="network">네트워크</string>
+    <string name="new_channel_rcvd">새로운 채널 URL 수신</string>
+    <!-- NO -->
+    <!-- NODE -->
+    <string name="node_filter_include_unknown">미확인 노드 포함</string>
+    <string name="node_filter_only_direct">직접 연결된 노드만 보기</string>
+    <string name="node_filter_only_online">오프라인 노드 숨기기</string>
+    <string name="node_filter_placeholder">필터</string>
+    <string name="node_filter_title">필터</string>
+    <string name="node_id">노드 ID</string>
+    <string name="node_layout_channel">채널</string>
+    <string name="node_layout_hops_away">Hops 수</string>
+    <string name="node_layout_power">전원</string>
+    <string name="node_number">노드 번호</string>
+    <string name="node_sort_alpha">A-Z</string>
+    <string name="node_sort_button">노드 정렬</string>
+    <string name="node_sort_channel">채널</string>
+    <string name="node_sort_distance">거리</string>
+    <string name="node_sort_hops_away">Hops 수</string>
+    <string name="node_sort_last_heard">최근 수신</string>
+    <string name="node_sort_via_favorite">즐겨찾기 우선</string>
+    <string name="node_sort_via_mqtt">MQTT 경유</string>
+    <string name="nodedb_reset">노드 목록 리셋</string>
+    <!-- NODES -->
+    <string name="nodes">노드</string>
+    <string name="nodes_unheard_remove">지우기</string>
+    <string name="none">없음 (연결해제)</string>
+    <string name="none_quality">없음</string>
+    <string name="not_connected">연결되지 않음</string>
+    <!-- NOTIFICATION -->
+    <!-- NOTIFICATIONS -->
+    <string name="notifications_on_alert_bell_receipt">경고/벨 수신 알림</string>
+    <string name="notifications_on_message_receipt">메시지 수신 알림</string>
+    <string name="now">지금</string>
+    <!-- OFFLINE -->
+    <string name="okay">확인</string>
+    <!-- ONE -->
+    <string name="one_day">24 시간</string>
+    <string name="one_week">1주</string>
+    <string name="only_favorites">즐겨찾기만 보기</string>
+    <!-- OPEN -->
+    <!-- PACKET -->
+    <string name="password">비밀번호</string>
+    <!-- PAX -->
+    <string name="paxcounter">팍스카운터</string>
+    <string name="paxcounter_config">팍스카운터 설정</string>
+    <!-- PERMISSION -->
+    <!-- PERMISSIONS -->
+    <string name="pin_selected">핀</string>
+    <!-- PM -->
+    <!-- POSITION -->
+    <string name="position">위치</string>
+    <string name="position_enabled">위치 활성화</string>
+    <string name="position_log">위치</string>
+    <string name="power">전원</string>
+    <string name="power_config">전원 설정</string>
+    <string name="preferences_language">언어</string>
+    <string name="preferences_system_default">시스템 기본값</string>
+    <string name="press_and_drag">누르고 드래그해서 순서 변경</string>
+    <string name="pressure">기압</string>
+    <!-- PREVIEW -->
+    <string name="primary">주 채널</string>
+    <string name="primary_channel_feature">위치 및 텔레메트리 주기적 전송</string>
+    <string name="provide_location_to_mesh">메쉬에 현재 위치 공유</string>
+    <string name="psk">PSK</string>
+    <string name="public_key">공개 키</string>
+    <string name="public_key_changed">공개 키 변경됨</string>
+    <string name="qr_code">QR코드</string>
+    <!-- QUICK -->
+    <string name="quick_chat">빠른 대화 옵션</string>
+    <string name="quick_chat_append">메시지에 추가</string>
+    <string name="quick_chat_edit">빠른 대화 편집</string>
+    <string name="quick_chat_instant">즉시 보내기</string>
+    <string name="quick_chat_new">새로운 빠른 대화</string>
+    <string name="radiation">복사</string>
+    <string name="radio_configuration">무선 설정</string>
+    <string name="range_test">거리 테스트</string>
+    <string name="range_test_config">거리 테스트 설정</string>
+    <string name="react">반응</string>
+    <string name="reboot">재부팅</string>
+    <string name="regenerate_keys_confirmation">개인 키를 다시 생성하시겠습니까?\n\n이 노드와 이전에 키를 교환한 노드들은 해당 노드를 제거하고 키를 다시 교환해야 안전한 통신을 재개할 수 있습니다.</string>
+    <string name="regenerate_private_key">개인 키 다시 생성하기</string>
+    <!-- REMOTE -->
+    <string name="remote">원격</string>
+    <string name="remote_admin">원격 설정</string>
+    <string name="remote_hardware">원격 하드웨어</string>
+    <string name="remote_hardware_config">원격 하드웨어 설정</string>
+    <string name="remote_hardware_enabled">원격 하드웨어 활성화</string>
+    <string name="remote_shell_key_alt">고도</string>
+    <string name="remote_shell_modifier_locked">잠김</string>
+    <string name="remote_shell_send">보내기</string>
+    <string name="remote_shell_status_not_connected">연결되지 않음</string>
+    <!-- REMOVE -->
+    <string name="remove">지우기</string>
+    <string name="remove_node_text">이 노드는 당신의 노드에서 데이터를 수신할 때 까지 목록에서 삭제됩니다.</string>
+    <string name="replace">바꾸기</string>
+    <string name="reply">답장</string>
+    <string name="report">보고</string>
+    <!-- REQUEST -->
+    <string name="resend">재전송</string>
+    <string name="reset">초기화</string>
+    <string name="reset_to_defaults">기본값으로 재설정</string>
+    <string name="ringtone">벨소리</string>
+    <!-- ROLE -->
+    <!-- ROUTING -->
+    <string name="routing_error_got_nak">수락 거부됨</string>
+    <string name="routing_error_no_route">루트 없음</string>
+    <string name="routing_error_none">수락 됨</string>
+    <string name="routing_error_timeout">시간 초과됨</string>
+    <string name="rssi">RSSI</string>
+    <string name="rssi_definition">수신 신호 강도 지표 Received Signal Strength Indicator, RSSI는 안테나가 수신하는 신호의 전력 수준을 측정하는 데 사용되는 지표입니다. RSSI 값이 높을수록 일반적으로 더 강력하고 안정적인 연결을 나타냅니다.</string>
+    <string name="sats">인공위성</string>
+    <string name="save">저장</string>
+    <string name="save_changes">저장</string>
+    <!-- SCAN -->
+    <string name="scan">스캔</string>
+    <string name="secondary">보조 채널</string>
+    <string name="secondary_no_telemetry">주기적인 텔레메트리 전송 없음</string>
+    <!-- SECURITY -->
+    <string name="security">보안</string>
+    <string name="security_icon_help_dismiss">취소</string>
+    <string name="select_all">전부 선택</string>
+    <string name="send">보내기</string>
+    <string name="serial">시리얼</string>
+    <string name="serial_config">시리얼 설정</string>
+    <string name="set_your_region">지역을 설정하세요</string>
+    <string name="settings">설정</string>
+    <!-- SHARE -->
+    <string name="share">공유</string>
+    <string name="share_contact">연락처 공유</string>
+    <string name="share_to">…로 공유</string>
+    <string name="short_name">짧은 이름</string>
+    <!-- SHOW -->
+    <string name="show_password">비밀번호 보기</string>
+    <string name="show_precision_circle">정밀도 반경 보이기</string>
+    <string name="show_waypoints">웨이포인트 보기</string>
+    <string name="shutdown">종료</string>
+    <string name="signal">신호</string>
+    <string name="signal_quality">신호 감도</string>
+    <!-- SITE -->
+    <string name="site_planner_section_display">화면</string>
+    <string name="slot">슬롯</string>
+    <string name="snr">SNR</string>
+    <string name="snr_definition">통신에서 원하는 신호의 수준을 배경 잡음의 수준과 비교하여 정량화하는 데 사용되는 신호 대 잡음비 Signal-to-Noise Ratio, SNR는 Meshtastic와 같은 무선 시스템에서 SNR이 높을수록 더 선명한 신호를 나타내어 데이터 전송의 안정성과 품질을 향상시킬 수 있습니다.</string>
+    <string name="supported">지원됨</string>
+    <string name="swipe_action_delete">삭제</string>
+    <string name="swipe_action_mute">음소거</string>
+    <string name="swipe_action_unmute">음소거 해제</string>
+    <!-- TAK -->
+    <string name="tak_server_regenerate_certs_confirm">재생성</string>
+    <string name="tak_server_section">서버</string>
+    <string name="telemetry">텔레메트리</string>
+    <string name="telemetry_config">텔레메트리 설정</string>
+    <string name="theme">테마</string>
+    <string name="theme_dark">다크</string>
+    <string name="theme_light">라이트</string>
+    <string name="theme_system">시스템 기본값</string>
+    <string name="time">시간</string>
+    <string name="timeout">시간 초과</string>
+    <string name="timestamp">타임스탬프</string>
+    <string name="toggle_my_position">내 위치 토글</string>
+    <string name="trace_route">추적 루트</string>
+    <!-- TRACEROUTE -->
+    <string name="traceroute">추적 루트</string>
+    <string name="traceroute_diff">Hops towards %1$d Hops back %2$d</string>
+    <string name="traceroute_direct">직접 연결</string>
+    <plurals name="traceroute_hops">
+        <item quantity="other">%d hops</item>
+    </plurals>
+    <string name="traceroute_log">추적 루트</string>
+    <!-- TRAFFIC -->
+    <string name="traffic_management_enabled">모듈 활성화</string>
+    <!-- TRANSLATION -->
+    <!-- TRANSPORT -->
+    <string name="transport_ble">BLE</string>
+    <string name="transport_lora">LoRa</string>
+    <string name="transport_mqtt">MQTT</string>
+    <string name="twenty_four_hours">24시간</string>
+    <string name="two_days">48 시간</string>
+    <string name="two_weeks">2주</string>
+    <string name="type">타입</string>
+    <string name="unit_dbm">dBm</string>
+    <string name="unit_meters">m</string>
+    <!-- UNITS -->
+    <string name="units_follow_system">시스템 기본값</string>
+    <!-- UNKNOWN -->
+    <string name="unknown">알 수 없는</string>
+    <string name="unknown_age">수명 확인 되지 않음</string>
+    <string name="unknown_username">미확인 유저</string>
+    <string name="unmessageable">메시지 제한</string>
+    <string name="unmonitored_or_infrastructure">감시되지 않거나 인프라 노드</string>
+    <string name="unmute">음소거 해제</string>
+    <string name="unrecognized">확인되지 않음</string>
+    <string name="uptime">업타임</string>
+    <!-- URL -->
+    <string name="url">URL</string>
+    <!-- USER -->
+    <string name="user">사용자</string>
+    <string name="user_config">사용자 설정</string>
+    <string name="user_id">유저 ID</string>
+    <string name="via_mqtt">MQTT 경유</string>
+    <string name="voltage">전압</string>
+    <string name="waypoint_delete">웨이포인트 삭제?</string>
+    <string name="waypoint_edit">웨이포인트 편집</string>
+    <string name="waypoint_new">새 웨이포인트</string>
+    <string name="waypoint_received">웨이포인트 수신: %1$s</string>
+    <string name="weight">무게</string>
+    <!-- WIFI -->
+    <string name="wifi_provision_success_ip_address">IP 주소</string>
+    <string name="wifi_provision_success_username">사용자명</string>
+    <!-- WIND -->
+    <string name="wind">바람</string>
+    <!-- WRITE -->
+    <string name="you">나</string>
+    <string name="zoom_in">확대</string>
+    <string name="zoom_out">축소</string>
+</resources>

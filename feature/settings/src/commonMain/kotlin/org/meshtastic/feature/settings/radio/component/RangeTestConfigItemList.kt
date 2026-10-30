@@ -1,0 +1,113 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.range_test
+import org.meshtastic.core.resources.range_test_config
+import org.meshtastic.core.resources.schema_rangetest_enabled
+import org.meshtastic.core.resources.schema_rangetest_enabled_description
+import org.meshtastic.core.resources.schema_rangetest_save
+import org.meshtastic.core.resources.schema_rangetest_save_description
+import org.meshtastic.core.resources.schema_rangetest_sender
+import org.meshtastic.core.resources.schema_rangetest_sender_description
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.IntervalConfiguration
+import org.meshtastic.feature.settings.util.toDisplayString
+import org.meshtastic.proto.ModuleConfig
+
+@Composable
+fun RangeTestConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val rangeTestConfig = state.moduleConfig.range_test ?: ModuleConfig.RangeTestConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = rangeTestConfig)
+
+    val isPublicPrimaryChannel = (state.channelList.firstOrNull()?.psk?.size ?: 0) < 2
+    val canConfigure = state.connected && !isPublicPrimaryChannel
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.range_test),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val safeConfig =
+                if (isPublicPrimaryChannel) it.newBuilder().also { wb -> wb.enabled = false }.build() else it
+            val config = ModuleConfig.Builder().also { wb -> wb.range_test = safeConfig }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ModuleRoute.RANGE_TEST.route)) {
+            TitledCard(title = stringResource(Res.string.range_test_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_rangetest_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_rangetest_enabled),
+                    summary = stringResource(Res.string.schema_rangetest_enabled_description),
+                    checked = formState.value.enabled,
+                    enabled = canConfigure || formState.value.enabled,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                val rangeItems = remember { IntervalConfiguration.RANGE_TEST_SENDER.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_rangetest_sender),
+                    modifier = Modifier.settingsField(Res.string.schema_rangetest_sender),
+                    summary = stringResource(Res.string.schema_rangetest_sender_description),
+                    selectedItem = (formState.value.sender).toLong(),
+                    enabled = canConfigure,
+                    items = rangeItems.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.sender = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_rangetest_save),
+                    modifier = Modifier.settingsField(Res.string.schema_rangetest_save),
+                    summary = stringResource(Res.string.schema_rangetest_save_description),
+                    checked = formState.value.save,
+                    enabled = canConfigure,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.save = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+    }
+}

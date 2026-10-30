@@ -1,1 +1,193 @@
-# meshplay-android
+<p align="center">
+  <img src=".github/meshtastic_logo.png" alt="Meshtastic Logo" width="200"/>
+</p>
+<h1 align="center">Meshtastic-Android</h1>
+
+![GitHub all releases](https://img.shields.io/github/downloads/meshtastic/meshtastic-android/total)
+[![Android CI](https://github.com/meshtastic/Meshtastic-Android/actions/workflows/pull-request.yml/badge.svg?branch=main)](https://github.com/meshtastic/Meshtastic-Android/actions/workflows/pull-request.yml)
+[![codecov](https://codecov.io/gh/meshtastic/Meshtastic-Android/graph/badge.svg)](https://codecov.io/gh/meshtastic/Meshtastic-Android)
+[![Crowdin](https://badges.crowdin.net/e/f440f1a5e094a5858dd86deb1adfe83d/localized.svg)](https://crowdin.meshtastic.org/android)
+[![CLA assistant](https://cla-assistant.io/readme/badge/meshtastic/Meshtastic-Android)](https://cla-assistant.io/meshtastic/Meshtastic-Android)
+[![Fiscal Contributors](https://opencollective.com/meshtastic/tiers/badge.svg?label=Fiscal%20Contributors&color=deeppink)](https://opencollective.com/meshtastic/)
+[![Vercel](https://img.shields.io/static/v1?label=Powered%20by&message=Vercel&style=flat&logo=vercel&color=000000)](https://vercel.com?utm_source=meshtastic&utm_campaign=oss)
+[![Revved up by Develocity](https://img.shields.io/badge/Revved%20up%20by-Develocity-06A0CE?logo=Gradle&labelColor=02303A)](https://community.develocity.cloud/scans?search.rootProjectNames=MeshtasticAndroid)
+
+The Meshtastic client for Android and Compose Desktop — an app for communicating over open-source mesh radios. For more information see our webpage: [meshtastic.org](https://www.meshtastic.org). The device-side code lives in the [firmware repository](https://github.com/meshtastic/firmware).
+
+If you have questions or feedback please [Join our discussion forum](https://github.com/orgs/meshtastic/discussions) or the [Discord Group](https://discord.gg/meshtastic). We would love to hear from you!
+
+## Features
+
+Highlights of the 2.8 line:
+
+- **Mesh network discovery** to surface nodes and channels around you, with **Mesh Beacon** invitations for joining nearby meshes.
+- **Waypoint geofences** — draw zones on the map and get alerts when nodes cross them.
+- **Secure key backup** — encrypted backup, restore, and delete for your device security keys.
+- **NFC sharing** — write shared contacts and channels to NFC tags.
+- **XEdDSA packet signing** indicators in the node and messaging UI.
+- **Air-quality telemetry** — PM1.0, PM2.5, PM10, and CO₂ readings from supported sensors.
+- **App Functions / system-AI integration** so on-device assistants can trigger common workflows.
+
+## Get Meshtastic
+
+The fastest way to get releases is [GitHub releases](https://github.com/meshtastic/Meshtastic-Android/releases); pair them with [Obtainium](https://github.com/ImranR98/Obtainium) for automatic updates.
+
+With Obtainium installed, tap a link below on your phone to set it up with everything pre-configured. The `google` flavor adds Google Maps, Firebase Crashlytics, Datadog and the Google AI features; `fdroid` has none of them.
+
+<!-- BEGIN GENERATED LINKS: obtainium/generate-links.py -->
+
+| Channel | `google` flavor | `fdroid` flavor |
+|---|---|---|
+| **Latest release** | [Add](https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.geeksville.mesh%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmeshtastic%2FMeshtastic-Android%22%2C%22author%22%3A%22meshtastic%22%2C%22name%22%3A%22Meshtastic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22google-release%5C%5C%5C%5C.apk%24%5C%22%2C%5C%22appName%5C%22%3A%5C%22Meshtastic%5C%22%7D%22%7D) | [Add](https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.geeksville.mesh%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmeshtastic%2FMeshtastic-Android%22%2C%22author%22%3A%22meshtastic%22%2C%22name%22%3A%22Meshtastic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22fdroid-.%2A-release%5C%5C%5C%5C.apk%24%5C%22%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%2C%5C%22appName%5C%22%3A%5C%22Meshtastic%5C%22%7D%22%7D) |
+| **Open beta** | [Add](https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.geeksville.mesh%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmeshtastic%2FMeshtastic-Android%22%2C%22author%22%3A%22meshtastic%22%2C%22name%22%3A%22Meshtastic%20Beta%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22-open%5C%22%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22google-release%5C%5C%5C%5C.apk%24%5C%22%2C%5C%22appName%5C%22%3A%5C%22Meshtastic%20Beta%5C%22%7D%22%7D) | [Add](https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://app/%7B%22id%22%3A%22com.geeksville.mesh%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fmeshtastic%2FMeshtastic-Android%22%2C%22author%22%3A%22meshtastic%22%2C%22name%22%3A%22Meshtastic%20Beta%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22-open%5C%22%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22fdroid-.%2A-release%5C%5C%5C%5C.apk%24%5C%22%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%2C%5C%22appName%5C%22%3A%5C%22Meshtastic%20Beta%5C%22%7D%22%7D) |
+
+<!-- END GENERATED LINKS -->
+
+What those two channels point at right now:
+
+<!-- BEGIN GENERATED STATUS: obtainium/generate-links.py --refresh -->
+
+| Channel | Currently | Released |
+|---|---|---|
+| **Latest release** | `v2.8.3` | 2026-10-19 |
+| **Open beta** | *none published right now* | — |
+
+<!-- END GENERATED STATUS -->
+
+Closed-beta and per-commit snapshot channels, importable config files, and the setup details are in [Test Builds & Obtainium](docs/en/developer/test-builds.md). These links, files and the table above are generated — see [`obtainium/`](obtainium/).
+
+These providers are also available but may update more slowly.
+
+[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
+alt="Get it on F-Droid"
+width="24%">](https://f-droid.org/packages/com.geeksville.mesh/)
+[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
+alt="Get it on IzzyOnDroid"
+width="24%">](https://apt.izzysoft.de/fdroid/index/apk/com.geeksville.mesh)
+[<img src="https://github.com/machiav3lli/oandbackupx/blob/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png"
+alt="Get it on GitHub"
+width="24%">](https://github.com/meshtastic/Meshtastic-Android/releases)
+[<img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"
+alt="Get it on Google Play"
+width="24%">](https://play.google.com/store/apps/details?id=com.geeksville.mesh&referrer=utm_source%3Dgithub-android-readme)
+
+Google Play is the last of these to update. To [join the Play Store testing program](https://play.google.com/apps/testing/com.geeksville.mesh), opt in to become a tester.
+If you encounter any problems or have questions, [ask us on the discord](https://discord.gg/meshtastic), [create an issue](https://github.com/meshtastic/Meshtastic-Android/issues), or [post in the forum](https://github.com/orgs/meshtastic/discussions) and we'll help as we can.
+
+### Desktop
+
+**Meshtastic Desktop** installers (macOS DMG, Windows MSI/EXE, Linux DEB/RPM/AppImage) are available from [GitHub Releases](https://github.com/meshtastic/Meshtastic-Android/releases). A Flatpak is available on [Flathub](https://flathub.org/apps/org.meshtastic.MeshtasticDesktop) (packaging repo: [flathub/org.meshtastic.MeshtasticDesktop](https://github.com/flathub/org.meshtastic.MeshtasticDesktop)).
+
+## Documentation
+
+Both sites are published to GitHub Pages. The site root carries the docs of the latest production release, `/main/` is rebuilt from `main` whenever a push changes the docs, and `/api/` is rebuilt from `main` daily and on each production release.
+
+| Site | URL | Contents |
+|---|---|---|
+| **User & Developer Docs** | [meshtastic.github.io/Meshtastic-Android](https://meshtastic.github.io/Meshtastic-Android/) | Jekyll site with the user and developer guides |
+| **API Reference** | [meshtastic.github.io/Meshtastic-Android/api](https://meshtastic.github.io/Meshtastic-Android/api/) | Dokka-generated KDoc for all public APIs |
+
+### Generating Locally
+
+**User & Developer Docs (Jekyll):**
+```shell
+./gradlew publishDocsSite -Pdocs.channel=root
+BUNDLE_GEMFILE=docs/Gemfile bundle exec jekyll serve \
+  --source build/_site --baseurl ""
+```
+
+**API Reference (Dokka):**
+```shell
+./gradlew :dokkaGeneratePublicationHtml
+# Output: build/dokka/html/index.html
+```
+
+## Architecture
+
+### Modern Android Development (MAD)
+The app follows modern Android development practices, built on top of a shared Kotlin Multiplatform (KMP) Core:
+- **KMP Modules:** Business logic (`core:domain`), data sources (`core:data`, `core:database`, `core:datastore`), and communications (`core:network`, `core:ble`) are entirely platform-agnostic, targeting Android and Compose Desktop.
+- **UI:** JetBrains Compose Multiplatform (Material 3) using Compose Multiplatform resources.
+- **State Management:** Unidirectional Data Flow (UDF) with ViewModels, Coroutines, and Flow.
+- **Dependency Injection:** Koin with Koin Annotations (K2 Compiler Plugin).
+- **Navigation:** JetBrains Navigation 3 (Multiplatform routing with RESTful deep linking).
+- **Data Layer:** Repository pattern with Room KMP (local DB), DataStore (prefs), and Protobuf (device comms). Protobuf models are consumed from the upstream `org.meshtastic:protobufs` Maven artifact, pinned in `gradle/libs.versions.toml`.
+
+### Bluetooth Low Energy (BLE)
+The BLE stack uses a multiplatform interface-driven architecture. Platform-agnostic interfaces live in `commonMain`, utilizing the **Kable** multiplatform BLE library to handle device communication across all supported targets (Android, Desktop). This provides a robust, Coroutine-based architecture for reliable device communication while remaining fully KMP compatible. See [core/ble/README.md](core/ble/README.md) for details.
+
+### Module Documentation
+
+Most modules have their own README with details on their responsibilities, API surface, and internal design.
+
+| Module | Description |
+|---|---|
+| [androidApp](androidApp/README.md) | Android application host — activity, manifest, flavors, root Koin graph |
+| [desktopApp](desktopApp/README.md) | Compose Desktop host — window, transports, packaging |
+| [core/domain](core/domain/README.md) | Business-logic use cases (radio config, sessions, exports) |
+| [core/repository](core/repository/README.md) | Data & infrastructure contracts (RadioTransport, NodeRepository, ServiceRepository) |
+| [core/takserver](core/takserver/README.md) | Meshtastic ↔ TAK (ATAK/iTAK) bridge — CoT server & conversion |
+| [core/ble](core/ble/README.md) | Multiplatform BLE transport (Kable) |
+| [core/network](core/network/README.md) | Internet comms: firmware metadata, map tiles, radio transports |
+| [core/data](core/data/README.md) | Repository layer — orchestrates DB, network, and service data |
+| [core/database](core/database/README.md) | Room KMP local persistence |
+| [core/datastore](core/datastore/README.md) | DataStore preferences |
+| [core/service](core/service/README.md) | Meshtastic Android service abstractions |
+| [core/navigation](core/navigation/README.md) | Type-safe Navigation 3 route model |
+| [core/resources](core/resources/README.md) | Centralized CMP string & drawable resources |
+| [core/model](core/model/README.md) | Shared domain models |
+| [core/ui](core/ui/README.md) | Shared UI components |
+| [core/common](core/common/README.md) | Common utilities |
+| [core/di](core/di/README.md) | Koin DI modules |
+| [core/testing](core/testing/README.md) | Shared test fakes & utilities |
+| [core/konsist](core/konsist/README.md) | Konsist architecture-rule tests (KMP boundary guards) |
+| [core/nfc](core/nfc/README.md) | NFC support |
+| [core/prefs](core/prefs/README.md) | Type-safe preferences over multiplatform DataStore |
+| [core/barcode](core/barcode/README.md) | Barcode / QR scanning |
+| [feature/messaging](feature/messaging/README.md) | Messaging UI feature |
+| [feature/map](feature/map/README.md) | Map UI feature — shared state, policy, tile sources and the waypoint editor |
+| [feature/map-maplibre](feature/map-maplibre/README.md) | MapLibre map surfaces shared by the `fdroid` flavor and Desktop |
+| [feature/map-terrain](feature/map-terrain/README.md) | Offline terrain math (Terrarium decode, hillshade, contours) shared by both map stacks |
+| [feature/coverage](feature/coverage/README.md) | Site Planner coverage computed in-process with ITU-R P.1812 (`kp1812`) |
+| [feature/node](feature/node/README.md) | Node detail UI feature |
+| [feature/settings](feature/settings/README.md) | Settings UI feature |
+| [feature/firmware](feature/firmware/README.md) | Firmware update UI feature |
+| [feature/intro](feature/intro/README.md) | Onboarding / intro UI feature |
+| [feature/wifi-provision](feature/wifi-provision/README.md) | Wi-Fi provisioning UI feature |
+| [feature/connections](feature/connections/README.md) | Device discovery & connection management (BLE / USB / TCP) |
+| [feature/discovery](feature/discovery/README.md) | Mesh network discovery (scanner, AI summaries, Mesh Beacon) |
+| [feature/docs](feature/docs/README.md) | In-app documentation browser with Chirpy AI assistant |
+| [feature/widget](feature/widget/README.md) | Android home-screen Glance widget (live mesh stats) |
+| [baselineprofile](baselineprofile/README.md) | Macrobenchmark Baseline Profile generation for `:androidApp` |
+
+## Translations
+
+You can help translate the app into your native language using [Crowdin](https://crowdin.meshtastic.org/android).
+
+## Integration
+
+The app includes a built-in local TAK server, turned on with **Enable Local TAK Server** under **Settings → Advanced → TAK Server**. It runs a loopback-only TLS (mTLS) server on port 8089 so ATAK on the same device can connect directly and route its traffic over the mesh. See [TAK Integration](docs/en/user/tak.md).
+
+## Building the Android App
+> [!WARNING]
+> Debug and release builds install side by side to ease development, but don't run both at once — force-quit the one you are not using.
+
+Follow the [Android development guide](https://meshtastic.org/docs/development/android/) to set up your environment.
+
+Note: when building the `google` flavor locally you will need a [Google Maps Android SDK API key](https://developers.google.com/maps/documentation/android-sdk/get-api-key) to use Google Maps. Create `secrets.properties` at the repo root and set `MAPS_API_KEY=…`. Without it the build still succeeds with the placeholder key from `secrets.defaults.properties`, but map tiles will not load. For example:
+```properties
+# secrets.properties
+MAPS_API_KEY=your_google_maps_api_key_here
+```
+
+## Contributing guidelines
+
+For detailed instructions on how to contribute, please see our [CONTRIBUTING.md](CONTRIBUTING.md) file.
+For details on our release process, see the [RELEASE_PROCESS.md](RELEASE_PROCESS.md) file.
+Forking or rebranding the app? Read [Forks and rebrands](CONTRIBUTING.md#forks-and-rebrands) first.
+
+## Repository Statistics
+
+![Alt](https://repobeats.axiom.co/api/embed/1d75239069a6d671fe0b8f80b2e1bf590a98f0eb.svg "Repobeats analytics image")
+
+Copyright 2025-2026, Meshtastic LLC. GPL-3.0 license

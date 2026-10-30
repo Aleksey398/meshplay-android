@@ -1,0 +1,64 @@
+# `:feature:discovery`
+
+## Overview
+
+The `:feature:discovery` module implements **Local Mesh Discovery**: the app cycles the connected node through a queue of LoRa modem presets, dwells on each for a configured duration while collecting packets, then persists and ranks the results so the user can see which preset (or beacon-advertised custom channel) has the most active mesh nearby. `DiscoveryScanEngine`, `DiscoveryHomeRestorer`, `DiscoveryTerminalCoordinator` and `DiscoveryInterruptedSessionRecovery` write sessions through `DiscoveryDao` directly; the ViewModels read and edit them through `DiscoveryRepository` (`core:repository`), so they can be revisited, mapped, summarized (AI or algorithmic), and exported.
+
+**Targets:** Android · JVM (Desktop) · iOS (via `meshtastic.kmp.feature` convention plugin)
+
+## Scan Workflow
+
+- `DiscoveryScanEngine` — core scan engine. Cycles through a queue of `ScanTarget`s, dwells on each while collecting packets, and persists aggregated results via `DiscoveryDao`.
+- `DiscoveryScanState` — state machine for the scan lifecycle: `Idle → Preparing → Shifting → [Reconnecting] → Dwell → … → Analysis → Complete`, with `Cancelling`/`Restoring`/`Failed` side paths.
+- `ScanTarget` — one queue entry. `channel == null` is a public-preset target, scanned on the default frequency slot with the primary channel on the default public channel (a custom primary is swapped out for the scan); a non-null channel is a beacon-advertised custom channel: the engine tunes the node's primary channel to that name+PSK (and region) for the dwell, on the frequency slot the beacon pinned or, when it pinned none, the slot the channel name hashes to. The original primary channel and LoRa config are restored afterward.
+- `DiscoveryRankingEngine` (`scan/`) — ranks preset results by unique node count, neighbor diversity, non-duplicate packet count, then median link quality (SNR first, then RSSI).
+- `Check24GhzCapability` (`scan/`) — layered heuristic that determines whether the connected node supports 2.4 GHz LoRa (SX1280), returning `Supported` / `Unsupported` / `Unknown`.
+
+## ViewModels & Screens
+
+| ViewModel | Screen (`ui/`) | Purpose |
+|---|---|---|
+| `DiscoveryViewModel` | `DiscoveryScanScreen` | Scan setup and live progress (drives `DiscoveryScanEngine`) |
+| `DiscoverySummaryViewModel` | `DiscoverySummaryScreen` | Post-scan session summary, ranking, and export |
+| `DiscoveryMapViewModel` | `DiscoveryMapScreen` | Discovered-node map with per-preset filter chips (rendered via `LocalDiscoveryMapProvider` from `core:ui`) |
+| `DiscoveryHistoryViewModel` | `DiscoveryHistoryScreen` | Past session list with delete |
+| `DiscoveryHistoryDetailViewModel` | `DiscoveryHistoryDetailScreen` | Detail view of one stored session |
+
+Navigation entries are registered by `discoveryGraph()` in `navigation/DiscoveryNavigation.kt` (Navigation 3, `DiscoveryRoute.*` keys).
+
+## Summary Layer: AI vs Algorithmic
+
+Same Google-flavor Gemini Nano vs fallback split as `:feature:docs`:
+
+- `ai/DiscoverySummaryAiProvider` — interface for natural-language session/preset summaries.
+- `ai/AlgorithmicSummaryProvider` — deterministic fallback delegating to `DiscoverySummaryGenerator`. Registered with `binds = []`; each platform binds the interface explicitly: the Android `google` flavor binds `GeminiNanoSummaryProvider` (`GoogleAiModule` in `:androidApp`), while `fdroid` (`FdroidAiModule`) and Desktop (`DesktopAiModule`) bind the algorithmic provider.
+- `ai/LoRaPresetReference` — modem-preset reference data (bandwidth, spreading factor, link budget) used to enrich AI prompts and algorithmic summaries.
+
+## Export
+
+Multiplatform export path in `export/`:
+
+- `DiscoveryExporter` — interface: `export(DiscoveryExportData): ExportResult` (success = bytes + MIME type + filename).
+- `DiscoveryReportFormatter` — shared formatting of session/preset report lines and filenames.
+- `rememberExportSaver()` / `ExportSaverLauncher` save an `ExportResult.Success` to a user-picked file through `core:ui`'s `rememberFileExporter`.
+- `PdfDiscoveryExporter` (androidMain) renders a PDF report; `TextDiscoveryExporter` (jvmMain) renders plain text.
+
+## Mesh Beacon Invitations
+
+UI for port-37 Mesh Beacon join invitations (`ui/component/`):
+
+- `MeshBeaconInvitationCard` — a received beacon offer with its advertised channel/region/preset; the user can survey the mesh first, join it, or dismiss. Shown on `DiscoveryScanScreen`.
+- `BeaconChannelsCard` — scan-setup section listing distinct beacon-advertised custom channels; selecting a row adds a custom-channel `ScanTarget`.
+
+## Key Dependencies
+
+From `feature/discovery/build.gradle.kts` (`commonMain`):
+
+- `core:common`, `core:database`, `core:di`, `core:model`, `core:navigation`, `core:repository`, `core:resources`, `core:ui`
+- `org.meshtastic:protobufs` (Maven artifact)
+
+`commonTest` adds `core:data`.
+
+## Testing
+
+`./gradlew :feature:discovery:allTests` runs the `commonTest` suite on JVM and as Android host tests. `DiscoveryTestRadioController` and `SharedInMemoryDiscoveryDao` stand in for the node and the database.

@@ -1,0 +1,608 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.desktop
+
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.ApplicationScope
+import androidx.compose.ui.window.Tray
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowState
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.isTraySupported
+import androidx.compose.ui.window.rememberTrayState
+import androidx.compose.ui.window.rememberWindowState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import co.touchlab.kermit.Logger
+import coil3.ImageLoader
+import coil3.annotation.ExperimentalCoilApi
+import coil3.compose.setSingletonImageLoaderFactory
+import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
+import coil3.network.DeDupeConcurrentRequestStrategy
+import coil3.network.ktor3.KtorNetworkFetcherFactory
+import coil3.request.crossfade
+import coil3.svg.SvgDecoder
+import coil3.util.DebugLogger
+import io.ktor.client.HttpClient
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import okio.Path.Companion.toPath
+import org.jetbrains.compose.resources.decodeToSvgPainter
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.context.GlobalContext
+import org.koin.core.context.stopKoin
+import org.koin.plugin.module.dsl.startKoin
+import org.maplibre.compose.desktop.ProvideMapPresentationHost
+import org.maplibre.compose.desktop.rememberAwtComposeMapPresentationHost
+import org.meshtastic.core.common.BuildConfigProvider
+import org.meshtastic.core.common.state.LaunchOptions
+import org.meshtastic.core.common.util.CommonUri
+import org.meshtastic.core.common.util.ioDispatcher
+import org.meshtastic.core.database.desktopDataDir
+import org.meshtastic.core.model.DeviceAddress
+import org.meshtastic.core.navigation.MultiBackstack
+import org.meshtastic.core.navigation.SettingsRoute
+import org.meshtastic.core.navigation.TopLevelDestination
+import org.meshtastic.core.navigation.rememberMultiBackstack
+import org.meshtastic.core.repository.Notification
+import org.meshtastic.core.repository.UiPrefs
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.desktop_tray_quit
+import org.meshtastic.core.resources.desktop_tray_show
+import org.meshtastic.core.resources.desktop_tray_tooltip
+import org.meshtastic.core.resources.desktop_update_available_message
+import org.meshtastic.core.resources.desktop_update_available_title
+import org.meshtastic.core.resources.desktop_update_download
+import org.meshtastic.core.service.MeshLogCleanup
+import org.meshtastic.core.service.MeshServiceOrchestrator
+import org.meshtastic.core.ui.theme.AppTheme
+import org.meshtastic.core.ui.util.LocalDiscoveryMapProvider
+import org.meshtastic.core.ui.util.LocalEventBranding
+import org.meshtastic.core.ui.util.LocalInlineMapProvider
+import org.meshtastic.core.ui.util.LocalMapMainScreenProvider
+import org.meshtastic.core.ui.util.LocalMapViewProvider
+import org.meshtastic.core.ui.util.LocalNodeTrackMapProvider
+import org.meshtastic.core.ui.util.LocalSitePlannerAvailable
+import org.meshtastic.core.ui.util.LocalTracerouteMapOverlayInsetsProvider
+import org.meshtastic.core.ui.util.LocalTracerouteMapProvider
+import org.meshtastic.core.ui.util.TracerouteMapOverlayInsets
+import org.meshtastic.core.ui.util.rememberOpenUrl
+import org.meshtastic.core.ui.viewmodel.UIViewModel
+import org.meshtastic.desktop.data.DesktopPreferencesDataSource
+import org.meshtastic.desktop.di.DesktopKoinApp
+import org.meshtastic.desktop.map.DesktopTracerouteMap
+import org.meshtastic.desktop.map.desktopMapViewProvider
+import org.meshtastic.desktop.notification.DesktopOS
+import org.meshtastic.desktop.notification.NativeNotificationSender
+import org.meshtastic.desktop.tray.SniTrayEffect
+import org.meshtastic.desktop.tray.TRAY_ICON_DARK
+import org.meshtastic.desktop.tray.TRAY_ICON_LIGHT
+import org.meshtastic.desktop.tray.TrayMenuItem
+import org.meshtastic.desktop.tray.canHideToTray
+import org.meshtastic.desktop.ui.DesktopMainScreen
+import org.meshtastic.feature.map.MapScreen
+import org.meshtastic.feature.map.SharedMapViewModel
+import org.meshtastic.feature.map.maplibre.MapLibreDiscoveryMap
+import org.meshtastic.feature.map.maplibre.MapLibreInlineMap
+import org.meshtastic.feature.map.maplibre.MapLibreNodeTrackMap
+import java.awt.Desktop
+import java.util.Locale
+import kotlin.system.exitProcess
+import coil3.util.Logger as CoilLogger
+
+/** Meshtastic Desktop — the first non-Android target for the shared KMP module graph. */
+private const val MEMORY_CACHE_MAX_BYTES = 64L * 1024L * 1024L // 64 MiB
+private const val DISK_CACHE_MAX_BYTES = 32L * 1024L * 1024L // 32 MiB
+
+/** Debug builds only: apply a `connections` deep link from the command line without the trust dialog. */
+private const val SKIP_CONNECT_CONFIRM_ARG = "--skip-connect-confirm"
+
+/** The window title, and the title the Linux tray item reports to its host. */
+private const val APP_WINDOW_TITLE = "Meshtastic Desktop"
+
+/**
+ * Loads an SVG from JVM classpath resources and returns a [Painter].
+ *
+ * Uses the CMP 1.11 `decodeToSvgPainter` extension which replaces the deprecated `useResource`/`loadSvgPainter` pair.
+ * The SVG bytes are read from the classpath because CMP `composeResources/` only supports XML vector drawables and
+ * raster images — not raw SVGs. Since the desktop module is a JVM-only host shell, classpath resource access is safe.
+ */
+@Composable
+private fun svgPainterResource(path: String, density: Density): Painter = remember(path, density) {
+    val classLoader =
+        requireNotNull(Thread.currentThread().contextClassLoader) {
+            "Missing context class loader while loading resource: $path"
+        }
+    val bytes =
+        requireNotNull(classLoader.getResourceAsStream(path)) { "Missing classpath resource: $path" }
+            .use { it.readAllBytes() }
+    bytes.decodeToSvgPainter(density)
+}
+
+@OptIn(ExperimentalCoilApi::class)
+fun main(args: Array<String>) {
+    installQuitHandler()
+    // exitProcessOnExit = false is what makes the shutdown block below reachable at all: with the default (true),
+    // application() calls System.exit(0) itself as soon as the Compose loop ends, and control never returns here.
+    // Do not "simplify" this back to a bare application {} — that silently disables every teardown that follows.
+    //
+    // No MapLibre.configure() call: the first map applies a default cache configuration process-wide.
+    application(exitProcessOnExit = false) {
+        val koinApp = remember {
+            installDesktopLogging(isDebug = DesktopBuildConfig.IS_DEBUG)
+            Logger.i { "Meshtastic Desktop — Starting" }
+            startKoin<DesktopKoinApp> {}
+                .also { app ->
+                    if (DesktopBuildConfig.IS_DEBUG && SKIP_CONNECT_CONFIRM_ARG in args) {
+                        app.koin.get<LaunchOptions>().skipDeepLinkConfirmation = true
+                    }
+                }
+        }
+        LaunchedEffect(Unit) { publishExitApplication(::exitApplication) }
+        val uiViewModel = remember { koinApp.koin.get<UIViewModel>() }
+
+        DeepLinkHandler(args, uiViewModel, remember { koinApp.koin.get<LaunchOptions>() })
+        MeshServiceLifecycle()
+        // Desktop has no WorkManager, so the hourly mesh log cleanup lives as long as the application composition.
+        LaunchedEffect(Unit) { withContext(ioDispatcher) { koinApp.koin.get<MeshLogCleanup>().runHourly() } }
+        ThemeAndLocaleProvider(uiViewModel)
+    }
+
+    // Runs on the main thread with the UI already gone. The native sender must be closed before the container goes,
+    // because it owns libnotify's process-wide handle on Linux. Both guarded: a teardown failure must not turn a
+    // clean quit into a non-zero exit.
+    runCatching { (GlobalContext.get().get<NativeNotificationSender>() as? AutoCloseable)?.close() }
+        .onFailure { Logger.w(it) { "Closing the native notification sender failed during shutdown" } }
+    runCatching { stopKoin() }.onFailure { Logger.w(it) { "stopKoin() failed during shutdown" } }
+    Logger.i { "Meshtastic Desktop — Stopped" }
+
+    // Restores the exit application() no longer performs. Not optional: lingering non-daemon threads (coroutine
+    // dispatchers, ktor pools, AWT stragglers) would otherwise keep the JVM alive after the last window closes,
+    // turning "quit" into a hung background process.
+    exitProcess(0)
+}
+
+// ----- Deep link handling -----
+
+/** Processes deep-link URIs from CLI arguments and OS-level URI handlers. */
+@Composable
+private fun ApplicationScope.DeepLinkHandler(
+    args: Array<String>,
+    uiViewModel: UIViewModel,
+    launchOptions: LaunchOptions,
+) {
+    LaunchedEffect(args) {
+        args.forEach { arg ->
+            if (
+                arg.startsWith("meshtastic://") ||
+                arg.startsWith("http://meshtastic.org") ||
+                arg.startsWith("https://meshtastic.org")
+            ) {
+                uiViewModel.handleDeepLink(CommonUri.parse(arg)) {
+                    Logger.e { "Invalid Meshtastic URI passed via args: $arg" }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_OPEN_URI)) {
+            Desktop.getDesktop().setOpenURIHandler { event ->
+                // The launch switch covers the links this process was started with, never one the OS hands over later.
+                launchOptions.skipDeepLinkConfirmation = false
+                val uriStr = event.uri.toString()
+                uiViewModel.handleDeepLink(CommonUri.parse(uriStr)) { Logger.e { "Invalid URI from OS: $uriStr" } }
+            }
+        }
+    }
+}
+
+// ----- Mesh service lifecycle -----
+
+/** Starts [MeshServiceOrchestrator] on composition and stops it on disposal. */
+@Composable
+private fun MeshServiceLifecycle() {
+    val meshServiceController = koinInject<MeshServiceOrchestrator>()
+    DisposableEffect(Unit) {
+        meshServiceController.start()
+        onDispose { meshServiceController.stop() }
+    }
+}
+
+// ----- Theme, locale, and application shell -----
+
+/** Resolves the user's theme/locale preferences and renders the full application UI. */
+@Suppress("ViewModelForwarding")
+@Composable
+@OptIn(ExperimentalCoilApi::class)
+private fun ApplicationScope.ThemeAndLocaleProvider(uiViewModel: UIViewModel) {
+    val systemLocale = remember { Locale.getDefault() }
+    val uiPrefs = koinInject<UiPrefs>()
+    val themePref by uiPrefs.theme.collectAsState(initial = -1)
+    val localePref by uiPrefs.locale.collectAsState(initial = "")
+    Locale.setDefault(resolveLocale(localePref, systemLocale))
+
+    val isDarkTheme =
+        when (themePref) {
+            1 -> false
+            2 -> true
+            else -> isSystemInDarkTheme()
+        }
+
+    MeshtasticDesktopApp(uiViewModel, isDarkTheme)
+}
+
+// ----- Application chrome (tray, window, navigation) -----
+
+/** Composes the system tray, window, and Coil image loader. */
+@Suppress("ViewModelForwarding")
+@Composable
+@OptIn(ExperimentalCoilApi::class)
+private fun ApplicationScope.MeshtasticDesktopApp(uiViewModel: UIViewModel, isDarkTheme: Boolean) {
+    var isAppVisible by remember { mutableStateOf(true) }
+    var isWindowReady by remember { mutableStateOf(false) }
+    val trayState = rememberTrayState()
+    val density = LocalDensity.current
+    val appIcon = svgPainterResource(TRAY_ICON_DARK, density)
+
+    val trayIcon = svgPainterResource(if (isSystemInDarkTheme()) TRAY_ICON_LIGHT else TRAY_ICON_DARK, density)
+
+    val notificationManager = koinInject<DesktopNotificationManager>()
+    val desktopPrefs = koinInject<DesktopPreferencesDataSource>()
+    val windowState = rememberWindowState()
+
+    LaunchedEffect(Unit) {
+        notificationManager.fallbackNotifications.collect { notification -> trayState.sendNotification(notification) }
+    }
+
+    val openUrl = rememberOpenUrl()
+    val updateInfo = rememberAvailableUpdate(notificationManager)
+
+    WindowBoundsManager(desktopPrefs, windowState) { isWindowReady = true }
+
+    // One menu model for both tray backends, so the rows cannot drift apart between platforms.
+    val trayTooltip = stringResource(Res.string.desktop_tray_tooltip)
+    val updateLabel = updateInfo?.let { stringResource(Res.string.desktop_update_download, it.versionName) }
+    val showLabel = stringResource(Res.string.desktop_tray_show)
+    val quitLabel = stringResource(Res.string.desktop_tray_quit)
+    val trayMenuItems = buildList {
+        if (updateInfo != null && updateLabel != null) {
+            add(TrayMenuItem(updateLabel) { openUrl(updateInfo.releaseUrl) })
+        }
+        add(TrayMenuItem(showLabel) { isAppVisible = true })
+        add(TrayMenuItem(quitLabel) { exitApplication() })
+    }
+
+    var isSniTrayRegistered by remember { mutableStateOf(false) }
+
+    if (DesktopOS.current() == DesktopOS.Linux) {
+        // AWT's tray is XEmbed, which GNOME and Plasma only proxy — and the proxy drops clicks. Speak
+        // StatusNotifierItem directly instead; Compose's Tray would just plant an inert icon here.
+        SniTrayEffect(
+            isDarkTheme = isSystemInDarkTheme(),
+            title = APP_WINDOW_TITLE,
+            tooltip = trayTooltip,
+            menuItems = trayMenuItems,
+            onActivate = { isAppVisible = true },
+            onRegistrationChange = { registered ->
+                isSniTrayRegistered = registered
+                // Losing the tray while hidden strands the window just as hiding into no tray would — a panel
+                // crash or a disabled extension gets there after the fact. Bring the window back so close quits.
+                if (!registered) isAppVisible = true
+            },
+        )
+    } else {
+        Tray(
+            state = trayState,
+            icon = trayIcon,
+            tooltip = trayTooltip,
+            onAction = { isAppVisible = true },
+            menu = { trayMenuItems.forEach { item -> Item(item.label, onClick = item.onClick) } },
+        )
+    }
+
+    if (isWindowReady) {
+        // Hide via `visible` rather than dropping the Window from composition so the UI tree
+        // (navigation backstack, scroll positions) survives a hide-to-tray round trip.
+        MeshtasticWindow(uiViewModel, isDarkTheme, appIcon, windowState, visible = isAppVisible) {
+            // Minimize to the tray on close — but only where the tray icon can actually be clicked
+            // back. Where it cannot, there is nowhere to minimize to, so quit instead; otherwise the
+            // process is stranded with no window, no reachable tray menu and no key handler either.
+            if (canHideToTray(awtTraySupported = isTraySupported, sniTrayRegistered = isSniTrayRegistered)) {
+                isAppVisible = false
+            } else {
+                exitApplication()
+            }
+        }
+    }
+}
+
+// ----- Update discovery -----
+
+/**
+ * Checks once per launch whether a newer release is published on GitHub and surfaces it via a native notification.
+ * Release builds only — dev builds carry the bare base version and would match or trail every published release.
+ * Flatpak installs (FLATPAK_ID is set inside the sandbox) update through Flathub instead, so don't point them at
+ * GitHub.
+ */
+@Composable
+private fun rememberAvailableUpdate(notificationManager: DesktopNotificationManager): UpdateChecker.UpdateInfo? {
+    val buildConfig = koinInject<BuildConfigProvider>()
+    val httpClient = koinInject<HttpClient>()
+    val updateInfo by
+        produceState<UpdateChecker.UpdateInfo?>(initialValue = null) {
+            if (!buildConfig.isDebug && System.getenv("FLATPAK_ID") == null) {
+                value = UpdateChecker(httpClient).check(buildConfig.versionName)
+            }
+        }
+
+    LaunchedEffect(updateInfo) {
+        updateInfo?.let { update ->
+            notificationManager.dispatch(
+                Notification(
+                    title = getString(Res.string.desktop_update_available_title),
+                    message = getString(Res.string.desktop_update_available_message, update.versionName),
+                    category = Notification.Category.Service,
+                ),
+            )
+        }
+    }
+    return updateInfo
+}
+
+// ----- Window bounds persistence -----
+
+/** Restores window geometry from preferences and persists changes via [snapshotFlow]. */
+@Composable
+private fun WindowBoundsManager(
+    desktopPrefs: DesktopPreferencesDataSource,
+    windowState: WindowState,
+    onReady: () -> Unit,
+) {
+    val currentOnReady by rememberUpdatedState(onReady)
+    LaunchedEffect(Unit) {
+        val initialWidth = desktopPrefs.windowWidth.first()
+        val initialHeight = desktopPrefs.windowHeight.first()
+        val initialX = desktopPrefs.windowX.first()
+        val initialY = desktopPrefs.windowY.first()
+
+        windowState.size = DpSize(initialWidth.dp, initialHeight.dp)
+        windowState.position =
+            if (!initialX.isNaN() && !initialY.isNaN()) {
+                WindowPosition(initialX.dp, initialY.dp)
+            } else {
+                WindowPosition(Alignment.Center)
+            }
+
+        currentOnReady()
+
+        snapshotFlow {
+            val x = if (windowState.position.isSpecified) windowState.position.x.value else Float.NaN
+            val y = if (windowState.position.isSpecified) windowState.position.y.value else Float.NaN
+            listOf(windowState.size.width.value, windowState.size.height.value, x, y)
+        }
+            .collect { bounds ->
+                desktopPrefs.setWindowBounds(width = bounds[0], height = bounds[1], x = bounds[2], y = bounds[3])
+            }
+    }
+}
+
+// ----- Main window with keyboard shortcuts and Coil -----
+
+/** Renders the main application window with keyboard shortcuts, Coil image loading, and the Compose UI tree. */
+@Suppress("ViewModelForwarding")
+@Composable
+@OptIn(ExperimentalCoilApi::class)
+private fun ApplicationScope.MeshtasticWindow(
+    uiViewModel: UIViewModel,
+    isDarkTheme: Boolean,
+    appIcon: Painter,
+    windowState: WindowState,
+    visible: Boolean,
+    onCloseRequest: () -> Unit,
+) {
+    val multiBackstack =
+        rememberMultiBackstack(
+            // Land on Connections for first-run / no-device-selected; otherwise on Nodes.
+            if (DeviceAddress.parse(uiViewModel.currentDeviceAddressFlow.value) == null) {
+                TopLevelDestination.Connect.route
+            } else {
+                TopLevelDestination.Nodes.route
+            },
+        )
+
+    Window(
+        onCloseRequest = onCloseRequest,
+        title = APP_WINDOW_TITLE,
+        icon = appIcon,
+        state = windowState,
+        visible = visible,
+        onPreviewKeyEvent = { event -> handleKeyboardShortcut(event, multiBackstack, ::exitApplication) },
+    ) {
+        val eventEdition by uiViewModel.eventEdition.collectAsStateWithLifecycle()
+
+        CoilImageLoaderSetup()
+        // Each window hands MapLibre its own GPU context; the map composites into Compose from there.
+        ProvideMapPresentationHost(host = rememberAwtComposeMapPresentationHost(window)) {
+            CompositionLocalProvider(
+                LocalEventBranding provides eventEdition,
+                LocalMapViewProvider provides desktopMapViewProvider(),
+                // The planner computes coverage on device and imports it as a map layer.
+                LocalSitePlannerAvailable provides true,
+                // mapGraph renders the Map tab through this seam, not through LocalMapViewProvider
+                // directly; without it the tab falls back to the "Map" placeholder.
+                LocalMapMainScreenProvider provides
+                    { onClickNodeChip, navigateToNodeDetails, waypointId, sitePlannerNodeNum, _ ->
+                        MapScreen(
+                            viewModel = koinViewModel<SharedMapViewModel>(),
+                            onClickNodeChip = onClickNodeChip,
+                            navigateToNodeDetails = navigateToNodeDetails,
+                            waypointId = waypointId,
+                            sitePlannerNodeNum = sitePlannerNodeNum,
+                        )
+                    },
+                LocalInlineMapProvider provides { node, modifier -> MapLibreInlineMap(node, modifier) },
+                LocalNodeTrackMapProvider provides
+                    { destNum, positions, modifier, selectedPositionTime, onPositionSelect, showAttribution ->
+                        MapLibreNodeTrackMap(
+                            destNum = destNum,
+                            positions = positions,
+                            modifier = modifier,
+                            selectedPositionTime = selectedPositionTime,
+                            onPositionSelect = onPositionSelect,
+                            showAttribution = showAttribution,
+                        )
+                    },
+                LocalDiscoveryMapProvider provides
+                    { userLatitude, userLongitude, nodes, modifier ->
+                        MapLibreDiscoveryMap(userLatitude, userLongitude, nodes, modifier)
+                    },
+                LocalTracerouteMapProvider provides
+                    { overlay, nodePositions, onMappableCountChanged, modifier ->
+                        DesktopTracerouteMap(overlay, nodePositions, onMappableCountChanged, modifier)
+                    },
+                // Clear of the MapLibre logo and attribution row along the bottom edge.
+                LocalTracerouteMapOverlayInsetsProvider provides
+                    TracerouteMapOverlayInsets(overlayPadding = PaddingValues(bottom = 48.dp)),
+            ) {
+                AppTheme(darkTheme = isDarkTheme) { DesktopMainScreen(uiViewModel, multiBackstack) }
+            }
+        }
+    }
+}
+
+/** Configures the Coil singleton [ImageLoader] with Ktor networking, SVG decoding, and caching. */
+@Composable
+@OptIn(ExperimentalCoilApi::class)
+private fun CoilImageLoaderSetup() {
+    val httpClient = koinInject<HttpClient>()
+    val buildConfigProvider = koinInject<BuildConfigProvider>()
+
+    setSingletonImageLoaderFactory { context ->
+        val cacheDir = desktopDataDir() + "/image_cache_v3"
+        ImageLoader.Builder(context)
+            .components {
+                add(
+                    KtorNetworkFetcherFactory(
+                        httpClient = httpClient,
+                        concurrentRequestStrategy = DeDupeConcurrentRequestStrategy(),
+                    ),
+                )
+                // Render SVGs to a bitmap on Desktop to avoid Skiko vector rendering artifacts
+                // that show up as solid/black hardware images.
+                add(SvgDecoder.Factory(renderToBitmap = true))
+            }
+            .memoryCache { MemoryCache.Builder().maxSizeBytes(MEMORY_CACHE_MAX_BYTES).build() }
+            .diskCache { DiskCache.Builder().directory(cacheDir.toPath()).maxSizeBytes(DISK_CACHE_MAX_BYTES).build() }
+            .logger(if (buildConfigProvider.isDebug) DebugLogger(minLevel = CoilLogger.Level.Verbose) else null)
+            .crossfade(true)
+            .build()
+    }
+}
+
+// ----- Keyboard shortcuts -----
+
+private val isMacOS = DesktopOS.current() == DesktopOS.MacOS
+
+/**
+ * Platform-conventional shortcut modifier: Cmd on macOS, Ctrl on Windows/Linux. Alt must be up on the Ctrl path because
+ * Windows reports AltGr as Ctrl+Alt — otherwise typing AltGr characters (e.g. @ on German layouts, which is AltGr+Q)
+ * would trigger shortcuts like quit.
+ */
+private val KeyEvent.isShortcutModifierPressed: Boolean
+    get() = if (isMacOS) isMetaPressed else isCtrlPressed && !isAltPressed
+
+/** Handles Cmd/Ctrl-key shortcuts. Returns `true` if the event was consumed. */
+private fun handleKeyboardShortcut(
+    event: KeyEvent,
+    multiBackstack: MultiBackstack,
+    exitApplication: () -> Unit,
+): Boolean {
+    if (event.type != KeyEventType.KeyDown || !event.isShortcutModifierPressed) return false
+    val backStack = multiBackstack.activeBackStack
+    return when (event.key) {
+        Key.Q -> {
+            exitApplication()
+            true
+        }
+
+        Key.Comma -> {
+            if (TopLevelDestination.Settings != TopLevelDestination.fromNavKey(backStack.lastOrNull())) {
+                multiBackstack.navigateTopLevel(TopLevelDestination.Settings.route)
+            }
+            true
+        }
+
+        Key.One -> {
+            multiBackstack.navigateTopLevel(TopLevelDestination.Messages.route)
+            true
+        }
+
+        Key.Two -> {
+            multiBackstack.navigateTopLevel(TopLevelDestination.Nodes.route)
+            true
+        }
+
+        Key.Three -> {
+            multiBackstack.navigateTopLevel(TopLevelDestination.Map.route)
+            true
+        }
+
+        Key.Four -> {
+            multiBackstack.navigateTopLevel(TopLevelDestination.Connect.route)
+            true
+        }
+
+        Key.Slash -> {
+            backStack.add(SettingsRoute.About)
+            true
+        }
+
+        else -> false
+    }
+}

@@ -1,0 +1,144 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.schema_storeforward_enabled
+import org.meshtastic.core.resources.schema_storeforward_enabled_description
+import org.meshtastic.core.resources.schema_storeforward_heartbeat
+import org.meshtastic.core.resources.schema_storeforward_heartbeat_description
+import org.meshtastic.core.resources.schema_storeforward_history_return_max
+import org.meshtastic.core.resources.schema_storeforward_history_return_window
+import org.meshtastic.core.resources.schema_storeforward_is_server
+import org.meshtastic.core.resources.schema_storeforward_is_server_description
+import org.meshtastic.core.resources.schema_storeforward_records
+import org.meshtastic.core.resources.store_forward
+import org.meshtastic.core.resources.store_forward_config
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.proto.ModuleConfig
+
+@Composable
+fun StoreForwardConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val storeForwardConfig = state.moduleConfig.store_forward ?: ModuleConfig.StoreForwardConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = storeForwardConfig)
+    val focusManager = LocalFocusManager.current
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.store_forward),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = ModuleConfig.Builder().also { wb -> wb.store_forward = it }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ModuleRoute.STORE_FORWARD.route)) {
+            TitledCard(title = stringResource(Res.string.store_forward_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_storeforward_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_storeforward_enabled),
+                    summary = stringResource(Res.string.schema_storeforward_enabled_description),
+                    checked = formState.value.enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_storeforward_heartbeat),
+                    modifier = Modifier.settingsField(Res.string.schema_storeforward_heartbeat),
+                    summary = stringResource(Res.string.schema_storeforward_heartbeat_description),
+                    checked = formState.value.heartbeat,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.heartbeat = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_storeforward_records),
+                    modifier = Modifier.settingsField(Res.string.schema_storeforward_records),
+                    value = formState.value.records,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.records = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_storeforward_history_return_max),
+                    modifier = Modifier.settingsField(Res.string.schema_storeforward_history_return_max),
+                    value = formState.value.history_return_max,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.history_return_max = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_storeforward_history_return_window),
+                    modifier = Modifier.settingsField(Res.string.schema_storeforward_history_return_window),
+                    value = formState.value.history_return_window,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.history_return_window = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_storeforward_is_server),
+                    modifier = Modifier.settingsField(Res.string.schema_storeforward_is_server),
+                    summary = stringResource(Res.string.schema_storeforward_is_server_description),
+                    checked = formState.value.is_server,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.is_server = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+    }
+}

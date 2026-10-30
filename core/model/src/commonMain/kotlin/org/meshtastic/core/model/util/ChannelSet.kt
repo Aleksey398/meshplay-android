@@ -1,0 +1,264 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+@file:Suppress("MagicNumber", "TooGenericExceptionCaught")
+
+package org.meshtastic.core.model.util
+
+import okio.ByteString.Companion.decodeBase64
+import okio.ByteString.Companion.toByteString
+import org.meshtastic.core.common.util.CommonUri
+import org.meshtastic.core.model.Channel
+import org.meshtastic.core.model.channelNum
+import org.meshtastic.core.model.numChannels
+import org.meshtastic.proto.ChannelSet
+import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config.LoRaConfig
+import org.meshtastic.proto.Config.LoRaConfig.RegionCode
+import org.meshtastic.proto.MeshBeacon
+import org.meshtastic.proto.ModuleSettings
+
+/**
+ * Return a [ChannelSet] that represents the ChannelSet encoded by the URL.
+ *
+ * @throws MalformedMeshtasticUrlException when not recognized as a valid Meshtastic URL
+ */
+@Suppress("ThrowsCount")
+@Throws(MalformedMeshtasticUrlException::class)
+fun CommonUri.toChannelSet(): ChannelSet {
+    val h = host ?: ""
+    val isCorrectHost =
+        h.equals(MESHTASTIC_HOST, ignoreCase = true) || h.equals("www.$MESHTASTIC_HOST", ignoreCase = true)
+    val segments = pathSegments
+    val isCorrectPath = segments.any { it.equals("e", ignoreCase = true) }
+    val frag = fragment
+
+    if (frag.isNullOrBlank() || !isCorrectHost || !isCorrectPath) {
+        throw MalformedMeshtasticUrlException(
+            "Not a valid Meshtastic URL: host=$h, segmentCount=${segments.size}, hasFragment=${!frag.isNullOrBlank()}",
+        )
+    }
+
+    // Older versions of Meshtastic clients (Apple/web) included `?add=true` within the URL fragment.
+    // This gracefully handles those cases until the newer version are generally available/used.
+    val fragmentBase64 = frag.substringBefore('?').replace('-', '+').replace('_', '/')
+    val fragmentBytes =
+        fragmentBase64.decodeBase64() ?: throw MalformedMeshtasticUrlException("Invalid Base64 in URL fragment")
+    val url =
+        try {
+            ChannelSet.ADAPTER.decode(fragmentBytes)
+        } catch (e: Exception) {
+            throw MalformedMeshtasticUrlException("Failed to decode channel set: ${e::class.simpleName}", e)
+        }
+    val shouldAdd = frag.substringAfter('?', "").addParameter() ?: getBooleanQueryParameter("add", false)
+
+    return if (shouldAdd) url.newBuilder().also { wb -> wb.lora_config = null }.build() else url
+}
+
+private fun String.addParameter(): Boolean? = split('&')
+    .firstOrNull { it.substringBefore('=').equals("add", ignoreCase = true) }
+    ?.substringAfter('=', missingDelimiterValue = "true")
+    ?.equals("true", ignoreCase = true)
+
+/** @return A list of globally unique channel IDs usable with MQTT subscribe() */
+val ChannelSet.subscribeList: List<String>
+    get() {
+        val loraConfig = this.lora_config ?: LoRaConfig.Builder().build()
+        return settings.filter { it.downlink_enabled }.map { Channel(it, loraConfig).name }
+    }
+
+fun ChannelSet.getChannel(index: Int): Channel? = if (settings.size > index) {
+    val s = settings[index]
+    Channel(s, lora_config ?: LoRaConfig.Builder().build())
+} else {
+    null
+}
+
+/** Return the primary channel info */
+val ChannelSet.primaryChannel: Channel?
+    get() = getChannel(0)
+
+fun ChannelSet.hasLoraConfig(): Boolean = lora_config != null
+
+/**
+ * True when [this] is a channel the radio already has configured (design#140 behavior 10). Null [currentLora] or an
+ * empty [currentChannels] means "can't tell" and returns false, never hiding a still-relevant invitation on missing
+ * data. Comparison uses resolved [ChannelIdentity] (effective name plus expanded PSK) so a blank-name primary or a
+ * short-code PSK still matches; differing PSK under an identical name is deliberately not a match, since same name with
+ * a different key is a different mesh. Secondary slots are skipped when [isChannelPlaceholder] (blank name, no PSK):
+ * [SwitchingChannelSetDataSource] pads a gap left by a removed channel with a bare [ChannelSettings], and those
+ * placeholders are read back unfiltered here, so without this exclusion a beacon offering a genuinely blank/cleartext
+ * channel would misclassify a padding slot as a real match. The primary slot (index 0) is never skipped: it always
+ * represents a real channel, matching the same convention in [normalizeReplacementSettings].
+ */
+@Suppress("ReturnCount")
+fun ChannelSettings.isAlreadyJoined(
+    offerPreset: LoRaConfig.ModemPreset?,
+    currentLora: LoRaConfig?,
+    currentChannels: List<ChannelSettings>,
+): Boolean {
+    val lora = currentLora ?: return false
+    if (currentChannels.isEmpty()) return false
+    val offerLora =
+        lora
+            .newBuilder()
+            .also { wb ->
+                wb.use_preset = true
+                wb.modem_preset = offerPreset ?: lora.modem_preset
+            }
+            .build()
+    val offerIdentity = channelIdentity(offerLora)
+    return currentChannels.withIndex().any { (index, settings) ->
+        (index == 0 || !settings.isChannelPlaceholder()) && settings.channelIdentity(lora) == offerIdentity
+    }
+}
+
+/**
+ * True when [this] beacon's offered channel is already configured on the radio; see [ChannelSettings.isAlreadyJoined].
+ */
+fun MeshBeacon.isAlreadyJoined(currentLora: LoRaConfig?, currentChannels: List<ChannelSettings>): Boolean {
+    val offer = offer_channel ?: return false
+    return offer.isAlreadyJoined(offer_preset, currentLora, currentChannels)
+}
+
+/** How a received Mesh Beacon invitation can be joined, given the connected radio's current settings. */
+enum class BeaconJoinOption {
+    /** Add the offered channel to a free secondary slot with no retune/reboot (mesh shares the radio's frequency). */
+    ADD,
+
+    /** Retune the radio's primary channel (and LoRa preset/region) onto the offered mesh — reboots the radio. */
+    SWITCH,
+
+    /** The beacon carries no join offer (message-only) — nothing to join. */
+    NONE,
+}
+
+/**
+ * Decides whether a beacon can be joined by simply **adding** its channel (no reboot) or requires a **switch**
+ * (retune + reboot). Adding works only when the offered mesh sits on the radio's *current* frequency slot — Meshtastic
+ * secondary channels ride the primary channel's frequency, so the offered channel must resolve to the same slot the
+ * radio's primary is on, under a matching preset and region. The offered slot comes from
+ * [MeshBeacon.offer_frequency_slot] when the beacon advertises one and from the channel-name hash otherwise; see
+ * [advertisedFrequencySlot]. Mirrors the Apple `014-mesh-beacons` FR-016/FR-017 logic.
+ *
+ * @param currentLora The radio's current [LoRaConfig] (`null` → can't reason, so [SWITCH]).
+ * @param currentChannels The radio's current channel settings, index 0 = primary.
+ */
+@Suppress("ReturnCount")
+fun MeshBeacon.beaconJoinOption(currentLora: LoRaConfig?, currentChannels: List<ChannelSettings>): BeaconJoinOption {
+    val offer = offer_channel ?: return BeaconJoinOption.NONE
+    val lora = currentLora ?: return BeaconJoinOption.SWITCH
+    // An offered preset must match the radio's; an omitted preset (null) means "ride the current preset" → matches.
+    val presetMatches = offer_preset == null || (lora.use_preset && offer_preset == lora.modem_preset)
+    // offer_region == UNSET (0) means "not offered"; only a set, differing region forces a switch.
+    val regionMatches = offer_region == RegionCode.UNSET || offer_region == lora.region
+    if (!presetMatches || !regionMatches) return BeaconJoinOption.SWITCH
+    if (lora.numChannels <= 0) return BeaconJoinOption.SWITCH
+    val advertisedSlot = advertisedFrequencySlot(lora)
+    // Only an advertised slot makes a pinned radio comparable: our own channel_num describes where we sit, never
+    // where the offered mesh sits, so without one there is nothing to compare a pin against.
+    if (advertisedSlot == null && lora.channel_num != 0) return BeaconJoinOption.SWITCH
+    // Hash the *effective* names: an empty channel name resolves to its preset display name ("LongFast", …), which is
+    // what firmware hashes for the slot — comparing raw "" on both sides would misclassify an unnamed primary.
+    val currentSlot =
+        lora.channelNum(Channel(currentChannels.firstOrNull() ?: ChannelSettings.Builder().build(), lora).name)
+    val offeredSlot = advertisedSlot ?: lora.channelNum(Channel(offer, lora).name)
+    return if (offeredSlot == currentSlot) BeaconJoinOption.ADD else BeaconJoinOption.SWITCH
+}
+
+/**
+ * Builds the [ChannelSet] to hand the QR channel-import dialog for a given [option].
+ *
+ * [ADD][BeaconJoinOption.ADD] omits `lora_config` so the dialog merges the offered channel into a free secondary slot
+ * with no reboot. [SWITCH][BeaconJoinOption.SWITCH] carries a **fresh** `lora_config` (not a copy of [currentLora])
+ * with `use_preset = true`, the advertised preset+region applied, and every RF field left at its default. Starting
+ * blank guarantees no stale slot/frequency pin (`channel_num`, `override_frequency`, manual
+ * bandwidth/spread_factor/coding_rate) from the old mesh survives the retune. `channel_num` is then set to the slot the
+ * beacon advertises, or left zero so firmware re-derives it from the offered channel name (Apple FR-006) when it
+ * advertises none. Only `region` is carried from [currentLora] when the beacon doesn't advertise one — this config is
+ * sent as a full LoRaConfig replacement, and a zero region disables transmit; `hop_limit`/`tx_enabled` fall back to the
+ * app's standard defaults. Returns `null` for [NONE][BeaconJoinOption.NONE] or a beacon with no offered channel.
+ *
+ * Both paths strip position sharing from the offered channel ([withoutPositionSharing]) so joining a stranger's mesh
+ * never leaks our location — matching Apple's `joinBeaconMesh`/`addBeaconChannel`.
+ *
+ * @param currentLora The radio's current [LoRaConfig]; a switch reuses only its region/preset as fallbacks.
+ */
+fun MeshBeacon.toJoinChannelSet(option: BeaconJoinOption, currentLora: LoRaConfig?): ChannelSet? {
+    val offerChannel = (offer_channel ?: return null).withoutPositionSharing()
+    return when (option) {
+        BeaconJoinOption.ADD -> ChannelSet.Builder().also { wb -> wb.settings = listOf(offerChannel) }.build()
+
+        BeaconJoinOption.SWITCH -> {
+            // Start from the shared device default ([Channel.default] — use_preset=true, hop_limit/tx_enabled set,
+            // every RF field blank) rather than a copy of the current config: any stale RF pin on the connected radio
+            // — an explicit channel_num, override_frequency, or manual bandwidth/spread_factor/coding_rate — would
+            // otherwise strand it on the old slot. This is sent as a full LoRaConfig replacement, so carry region (a
+            // zero region disables transmit); preset, region and the frequency slot are the only RF fields the beacon
+            // proto advertises.
+            val base = currentLora ?: LoRaConfig.Builder().build()
+            val loraConfig =
+                Channel.default.loraConfig
+                    .newBuilder()
+                    .also { wb ->
+                        wb.modem_preset = offer_preset ?: base.modem_preset
+                        wb.region = if (offer_region != RegionCode.UNSET) offer_region else base.region
+                    }
+                    .build()
+            // Bound the advertised slot against the config we are about to send, not the one we are leaving: the
+            // offered region can have a different slot count from ours. Zero leaves firmware to derive it.
+            val advertisedSlot = advertisedFrequencySlot(loraConfig)
+            ChannelSet.Builder()
+                .also { wb ->
+                    wb.settings = listOf(offerChannel)
+                    wb.lora_config = loraConfig.newBuilder().also { lb -> lb.channel_num = advertisedSlot ?: 0 }.build()
+                }
+                .build()
+        }
+
+        BeaconJoinOption.NONE -> null
+    }
+}
+
+/**
+ * Zeroes `position_precision` on the offered channel so joining a beaconed mesh never broadcasts our location to a mesh
+ * of strangers (privacy-first; Apple sets `positionPrecision = 0` on both add and switch).
+ */
+private fun ChannelSettings.withoutPositionSharing(): ChannelSettings = this.newBuilder()
+    .also { wb ->
+        wb.module_settings =
+            (module_settings ?: ModuleSettings.Builder().build())
+                .newBuilder()
+                .also { wb -> wb.position_precision = 0 }
+                .build()
+    }
+    .build()
+
+/**
+ * Return a URL that represents the [ChannelSet]
+ *
+ * @param upperCasePrefix portions of the URL can be upper case to make for more efficient QR codes
+ */
+fun ChannelSet.getChannelUrl(upperCasePrefix: Boolean = false, shouldAdd: Boolean = false): CommonUri {
+    val channelBytes =
+        ChannelSet.ADAPTER.encode(
+            if (shouldAdd) this.newBuilder().also { wb -> wb.lora_config = null }.build() else this,
+        )
+    val enc = channelBytes.toByteString().base64Url().replace("=", "")
+    val p = if (upperCasePrefix) CHANNEL_URL_PREFIX.uppercase() else CHANNEL_URL_PREFIX
+    val query = if (shouldAdd) "?add=true" else ""
+    return CommonUri.parse("$p$query#$enc")
+}

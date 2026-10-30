@@ -1,0 +1,634 @@
+name: Make Release
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: 'The tag that triggered the release'
+        required: true
+        type: string
+      version_name:
+        description: 'The version name the build carries (e.g., 2.3.0)'
+        required: true
+        type: string
+      version_code:
+        description: 'The version code the build carries'
+        required: true
+        type: string
+    secrets:
+      GSERVICES:
+        required: true
+      KEYSTORE:
+        required: true
+      KEYSTORE_FILENAME:
+        required: true
+      KEYSTORE_PROPERTIES:
+        required: true
+      DATADOG_APPLICATION_ID:
+        required: true
+      DATADOG_CLIENT_TOKEN:
+        required: true
+      DATADOG_API_KEY:
+        required: false
+      GOOGLE_MAPS_API_KEY:
+        required: true
+      GOOGLE_PLAY_JSON_KEY:
+        required: true
+      GRADLE_ENCRYPTION_KEY:
+        required: true
+      DEVELOCITY_ACCESS_KEY:
+        required: false
+      APPLE_SIGNING_IDENTITY:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      # Windows Authenticode signing via Azure Trusted Signing (now "Artifact Signing").
+      # All optional: the signing step skips cleanly when absent, like macOS above.
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_TRUSTED_SIGNING_ENDPOINT:
+        required: false
+      AZURE_TRUSTED_SIGNING_ACCOUNT:
+        required: false
+      AZURE_TRUSTED_SIGNING_CERT_PROFILE:
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release-google:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+          cache_read_only: 'false'
+
+      - name: Load secrets
+        env:
+          GSERVICES: ${{ secrets.GSERVICES }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_FILENAME: ${{ secrets.KEYSTORE_FILENAME }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+          DATADOG_APPLICATION_ID: ${{ secrets.DATADOG_APPLICATION_ID }}
+          DATADOG_CLIENT_TOKEN: ${{ secrets.DATADOG_CLIENT_TOKEN }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          rm -f ./androidApp/google-services.json
+          echo "$GSERVICES" > ./androidApp/google-services.json
+          echo "$KEYSTORE" | base64 -di > "./androidApp/$KEYSTORE_FILENAME"
+          echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
+          {
+            echo "datadogApplicationId=$DATADOG_APPLICATION_ID"
+            echo "datadogClientToken=$DATADOG_CLIENT_TOKEN"
+            echo "MAPS_API_KEY=$GOOGLE_MAPS_API_KEY"
+          } >> ./secrets.properties
+
+      # Build only: publish-play uploads the bundle once every leg has built. The Datadog
+      # mapping upload runs in the same invocation so its build ID matches the bundle's.
+      - name: Build the Google release
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          DD_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+        run: |
+          tasks=(:androidApp:bundleGoogleRelease :androidApp:assembleGoogleRelease)
+          if [ -n "$DD_API_KEY" ]; then
+            tasks+=(:androidApp:uploadMappingGoogleRelease)
+          else
+            echo "::warning::DATADOG_API_KEY is not set, so Datadog gets no R8 mapping for this release"
+          fi
+          ./gradlew "${tasks[@]}" \
+            -Pandroid.injected.version.name="$VERSION_NAME" \
+            -Pandroid.injected.version.code="$VERSION_CODE" \
+            -PaboutLibraries.release=true \
+            -Pmeshtastic.disableAbiSplits=true
+
+      - name: List outputs
+        run: ls -R androidApp/build/outputs/
+
+      - name: Upload Google AAB artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: google-aab
+          path: androidApp/build/outputs/bundle/googleRelease/androidApp-google-release.aab
+          retention-days: 1
+
+      - name: Upload Google APK artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: google-apk
+          path: androidApp/build/outputs/apk/google/release/*.apk
+          retention-days: 1
+
+      # github-release attaches it, so anyone can retrace a pasted google-flavor stack.
+      - name: Compress the R8 mapping
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: gzip -c androidApp/build/outputs/mapping/googleRelease/mapping.txt > "mapping-google-$VERSION_CODE.txt.gz"
+
+      - name: Upload the R8 mapping artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: google-mapping
+          path: mapping-google-*.txt.gz
+          retention-days: 1
+
+      - name: Attest Google AAB provenance
+        if: success()
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: androidApp/build/outputs/bundle/googleRelease/androidApp-google-release.aab
+
+      - name: Attest Google APK provenance
+        if: success()
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: androidApp/build/outputs/apk/google/release/*.apk
+
+  release-fdroid:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+          cache_read_only: 'false'
+
+      - name: Load secrets
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_FILENAME: ${{ secrets.KEYSTORE_FILENAME }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+        run: |
+          echo "$KEYSTORE" | base64 -di > "./androidApp/$KEYSTORE_FILENAME"
+          echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
+
+      # No aboutLibraries.release: offlineMode keeps the output matching F-Droid's reproducible rebuild.
+      - name: Build the F-Droid release
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: >
+          ./gradlew :androidApp:assembleFdroidRelease
+          -Pandroid.injected.version.name="$VERSION_NAME"
+          -Pandroid.injected.version.code="$VERSION_CODE"
+
+      - name: List outputs
+        run: ls -R androidApp/build/outputs/
+
+      - name: Upload F-Droid APK artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: fdroid-apk
+          path: androidApp/build/outputs/apk/fdroid/release/*.apk
+          retention-days: 1
+
+      - name: Attest F-Droid APK provenance
+        if: success()
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: androidApp/build/outputs/apk/fdroid/release/*.apk
+
+  release-desktop:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-24.04, ubuntu-24.04-arm]
+    env:
+      # Secrets aren't readable in step `if:` expressions, so surface presence here.
+      SIGN_WINDOWS: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && 'true' || 'false' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+          cache_read_only: 'false'
+
+      - name: Install dependencies for AppImage
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfuse2t64
+
+      - name: Package Native Distributions
+        env:
+          ORG_GRADLE_PROJECT_appVersionName: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          SIGN_MACOS: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY != '' && 'true' || 'false' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        # Build the release distribution for the current OS.
+        # On macOS, also build a ReleaseUberJar for the Homebrew Cask.
+        # Quote the -P flag: PowerShell on Windows interprets the dot in
+        # `-PaboutLibraries.release=true` as member access on `-PaboutLibraries`,
+        # splitting the token and feeding `.release=true` to Gradle as a task name.
+        # --no-isolated-projects --no-configuration-cache, Windows only: CMP's WiX packaging
+        # reads Project.layout on the root project, which IP rejects. configureWix only runs
+        # where MSI/EXE are target formats, so the other runners package fine with IP on.
+        # Both flags must go together and must be flags, not -D properties (inert on
+        # windows-latest) — full rationale on the desktop packaging step in reusable-check.yml.
+        run: >
+          ./gradlew :desktopApp:packageReleaseDistributionForCurrentOS
+          ${{ contains(runner.os, 'macOS') && ':desktopApp:packageReleaseUberJarForCurrentOS' || '' }}
+          '-PaboutLibraries.release=true' '-Pdesktop.release=true' --no-daemon
+          ${{ runner.os == 'Windows' && '--no-isolated-projects --no-configuration-cache' || '' }}
+
+      # Authenticode-signs the MSI/EXE installers via Azure Trusted Signing
+      # (rebranded "Artifact Signing"). Skips cleanly when the secrets are
+      # absent, mirroring SIGN_MACOS. Required repository secrets:
+      #   AZURE_TENANT_ID                    – Entra tenant ID
+      #   AZURE_CLIENT_ID                    – app registration (service principal) client ID
+      #   AZURE_CLIENT_SECRET                – client secret for that app registration
+      #   AZURE_TRUSTED_SIGNING_ENDPOINT     – e.g. https://eus.codesigning.azure.net
+      #   AZURE_TRUSTED_SIGNING_ACCOUNT      – Trusted Signing account name
+      #   AZURE_TRUSTED_SIGNING_CERT_PROFILE – public-trust certificate profile name
+      # The service principal needs the "Trusted Signing Certificate Profile
+      # Signer" role on the account. Presence is gated on the ENDPOINT secret;
+      # a half-configured set fails here loudly rather than shipping unsigned.
+      # Note: only the installers are signed, not the launcher .exe packaged
+      # inside them — SmartScreen reputation attaches to the downloaded file.
+      # Sign the inner .exe between createReleaseDistributable and packaging
+      # if that ever becomes necessary.
+      - name: Sign Windows installers (Azure Trusted Signing)
+        if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE }}
+          files-folder: desktopApp/build/compose/binaries/main-release
+          files-folder-filter: msi,exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      # CMP's TargetFormat.AppImage is jpackage's "app-image" — an unpacked
+      # directory, not a Linux .AppImage. Wrap it into a real AppImage so
+      # Linux users get a portable no-install binary alongside .deb/.rpm.
+      # This is what the libfuse2t64 install above is for: appimagetool is
+      # itself an AppImage (APPIMAGE_EXTRACT_AND_RUN is the no-FUSE fallback).
+      - name: Build AppImage from jpackage app-image
+        if: runner.os == 'Linux'
+        env:
+          APP_VERSION_NAME: ${{ inputs.version_name }}
+          # GitHub's `latest` skips prereleases, so internal builds also update to the newest production release.
+          UPDATE_RELEASE_TAG: latest
+        run: scripts/build-appimage.sh
+
+      - name: List Desktop Binaries
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        run: ls -R desktopApp/build/compose/binaries/main-release
+
+      - name: Upload Desktop Artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: desktop-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            desktopApp/build/compose/binaries/main-release/*/*.dmg
+            desktopApp/build/compose/binaries/main-release/*/*.msi
+            desktopApp/build/compose/binaries/main-release/*/*.exe
+            desktopApp/build/compose/binaries/main-release/*/*.deb
+            desktopApp/build/compose/binaries/main-release/*/*.rpm
+            desktopApp/build/compose/binaries/main-release/*/*.AppImage
+            desktopApp/build/compose/binaries/main-release/*/*.AppImage.zsync
+            desktopApp/build/compose/jars/*-release.jar
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Attest Desktop artifact provenance
+        if: success()
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: |
+            desktopApp/build/compose/binaries/main-release/*/*.dmg
+            desktopApp/build/compose/binaries/main-release/*/*.msi
+            desktopApp/build/compose/binaries/main-release/*/*.exe
+            desktopApp/build/compose/binaries/main-release/*/*.deb
+            desktopApp/build/compose/binaries/main-release/*/*.rpm
+            desktopApp/build/compose/binaries/main-release/*/*.AppImage
+            desktopApp/build/compose/binaries/main-release/*/*.AppImage.zsync
+            desktopApp/build/compose/jars/*-release.jar
+
+  create-flatpak-src:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # No .deb host-coupling here (pure-Java uber jar + URL manifest) — free to track
+        # the current LTS image.
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+          cache_read_only: 'true'
+
+      # Uses an isolated Gradle user home so every artifact actually traverses the
+      # network — the flatpak-sources plugin captures URLs via BuildOperationListener and
+      # only sees ExternalResourceReadBuildOperation events for cache misses. With the
+      # shared cache, downloads would be skipped and the manifest would be (nearly) empty.
+      # We drive packageUberJarForCurrentOS — the same task the in-flatpak build invokes —
+      # so the runtime classpath is fully resolved (skiko, ktor-cio, kable-btleplug-ffi, …
+      # are runtime-only and would be missed by :assemble).
+      - name: Generate Flatpak Sources
+        run: >
+          ./gradlew --no-build-cache
+          -Dgradle.user.home=${{ runner.temp }}/flatpak-gradle-home
+          :desktopApp:packageUberJarForCurrentOS :captureFlatpakSources
+
+      - name: Stage manifest
+        run: cp build/flatpak-sources.json flatpak-sources.json
+
+      - name: List Flatpak source files
+        run: ls -l flatpak-sources.json
+
+      - name: Upload Flatpak source artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: flatpak-multisrc-${{ runner.arch }}
+          path: flatpak-sources.json
+          retention-days: 1
+
+  release-flatpak-src:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    needs: [create-flatpak-src]
+    steps:
+      - name: Download Flatpak source artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: flatpak-multisrc-*
+          path: flatpak-multisrc
+
+      - name: List Flatpak source files
+        run: ls -R flatpak-multisrc/
+
+      - name: Validate Flatpak source files
+        run: jq empty flatpak-multisrc/*/flatpak-sources.json
+
+      - name: Combine Flatpak source files
+        run: >
+          jq -s 'add | unique_by(.dest + "/" + .["dest-filename"])'
+          flatpak-multisrc/*/flatpak-sources.json
+          > flatpak-sources.json
+
+      - name: Upload combined Flatpak source artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: flatpak-sources
+          path: flatpak-sources.json
+          retention-days: 1
+      
+      - name: Attest combined Flatpak source artifact provenance
+        if: success()
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: flatpak-sources.json
+
+  # The store-listing screenshots are an output of the tag: the real debug apps on an
+  # emulator and on a virtual display, connected to Demo Mode's showcase mesh
+  # (store-screenshots.yml), attached to the release, and published to the Play listing
+  # by the production promotion. A capture failure must not lose the release or its tag
+  # (the caller deletes the tag on a failed run): the capture runs soft, github-release
+  # does not gate on it, and packaging falls back to the committed sets.
+  store-screenshots:
+    uses: ./.github/workflows/store-screenshots.yml
+    with:
+      ref: ${{ inputs.tag_name }}
+      soft: true
+    secrets: inherit
+
+  # Play receives the bundle only after every leg has built: a failed leg makes the caller
+  # delete the tag, and Play keeps any versionCode it has been sent.
+  publish-play:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 15
+    needs: [release-google, release-fdroid, release-desktop, release-flatpak-src]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+
+      - name: Download the Google AAB
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: google-aab
+          path: ${{ runner.temp }}/google-aab
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        with:
+          bundler-cache: true
+
+      - name: Decode Play Store credentials
+        env:
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+        run: printf '%s\n' "$GOOGLE_PLAY_JSON_KEY" > fastlane/play-store-credentials.json
+
+      - name: Upload to the internal track
+        env:
+          AAB: ${{ runner.temp }}/google-aab/androidApp-google-release.aab
+        run: bundle exec fastlane upload_internal aab:"$AAB"
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f fastlane/play-store-credentials.json
+
+  github-release:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 15
+    needs: [publish-play]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          path: ./artifacts
+
+      # Raw captures already uploaded stay out: store-screenshots-assets packages and attaches them.
+      - name: Exclude intermediate artifacts from release
+        run: rm -rf ./artifacts/flatpak-multisrc-* ./artifacts/store-screenshots-*
+
+      # Generate the notes ourselves with an explicit previous tag. GitHub's automatic
+      # previous-release selection considers any published release, including the rolling
+      # "snapshot" prerelease that main-check.yml recreates on every push to main — when
+      # snapshot's commit is an ancestor of this tag it wins and the notes come out empty
+      # (see v2.8.0-open.3). Internal releases are drafts and invisible to the API's
+      # auto-selection, so pick the newest published v* release ourselves.
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag_name }}
+          TARGET: ${{ github.sha }}
+        run: |
+          # Fail the step if the listing itself fails — an empty PREV must only ever
+          # mean "no published v* release exists yet", never a swallowed API error,
+          # because empty PREV re-enables the automatic selection this step avoids.
+          PUBLISHED_TAGS=$(gh api "repos/${REPO}/releases" --paginate \
+            --jq '.[] | select(.draft == false) | .tag_name')
+          PREV=$(printf '%s\n' "$PUBLISHED_TAGS" | grep -E '^v[0-9]' | grep -Fxv "$TAG" | head -1 || true)
+          echo "Previous release tag: ${PREV:-<none — falling back to automatic selection>}"
+          gh api "repos/${REPO}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            -f target_commitish="$TARGET" \
+            ${PREV:+-f previous_tag_name="$PREV"} \
+            --jq '.body' > release-notes.md
+
+      # The generated notes are a list of PR titles - accurate, and not what a user reads.
+      # metainfo.xml already carries one hand-written paragraph per version, required by
+      # pull-request.yml on the VERSION_NAME_BASE bump, so reuse it rather than asking for
+      # the same sentence twice. When it is missing the notes gain a rendered warning
+      # instead of silence, and every release here is created as a draft, so that warning
+      # is seen before anyone publishes.
+      - name: Prepend release highlights
+        run: |
+          python3 scripts/release-highlights.py \
+            desktopApp/packaging/linux/org.meshtastic.MeshtasticDesktop.metainfo.xml \
+            config.properties \
+            release-notes.md
+          echo "--- release notes ---"
+          cat release-notes.md
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ inputs.tag_name }} (${{ inputs.version_code }})
+          body_path: release-notes.md
+          files: ./artifacts/**/*
+          draft: true
+          prerelease: true
+
+  # One zip per flavor laid out as fastlane's images/ folder (google feeds the Play
+  # listing, fdroid the committed tree F-Droid reads) and the five desktop PNGs loose,
+  # so metainfo.xml can point at them by name. A flavor or the desktop set with a shot
+  # missing is replaced whole by the committed one, never mixed. They are attached to
+  # the draft github-release created, so the draft never waits on the emulator.
+  store-screenshots-assets:
+    if: ${{ !cancelled() && needs.github-release.result == 'success' }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    continue-on-error: true
+    needs: [store-screenshots, github-release]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag_name }}
+
+      - name: Download the captures
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: store-screenshots-*
+          path: shots
+
+      - name: Package the screenshots
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          mkdir -p out
+          echo "### Store screenshots" >> "$GITHUB_STEP_SUMMARY"
+          # Three form factors times five shots.
+          for flavor in google fdroid; do
+            src="shots/store-screenshots-$flavor"
+            count=$(find "$src" -name '*.png' 2>/dev/null | wc -l)
+            if [ "$count" -ne 15 ]; then
+              echo "::warning::$flavor captured $count of 15 shots; the committed set is attached instead."
+              echo "- $flavor: $count of 15 captured, committed set attached" >> "$GITHUB_STEP_SUMMARY"
+              src=fastlane/metadata/android/en-US/images
+            else
+              echo "- $flavor: captured from the tag" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            (cd "$src" && zip -qr "$GITHUB_WORKSPACE/out/store-listing-screenshots-$flavor-${VERSION_CODE}.zip" .)
+          done
+          src=shots/store-screenshots-desktop
+          count=$(find "$src" -name 'meshtastic-desktop-*.png' 2>/dev/null | wc -l)
+          if [ "$count" -ne 5 ]; then
+            echo "::warning::desktop captured $count of 5 shots; the committed set is attached instead."
+            echo "- desktop: $count of 5 captured, committed set attached" >> "$GITHUB_STEP_SUMMARY"
+            src=desktopApp/packaging/linux/screenshots
+          else
+            echo "- desktop: captured from the tag" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cp "$src"/meshtastic-desktop-*.png out/
+
+      - name: Attach the screenshots to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag_name }}
+        run: gh release upload "$TAG" out/* --clobber --repo "$REPO"

@@ -1,0 +1,76 @@
+# Lanes are invoked by the workflows in .github/workflows (release.yml,
+# promote.yml, play-listing.yml, play-rollout.yml); `bundle exec fastlane lanes`
+# lists them.
+# Play credentials come from fastlane/play-store-credentials.json, written by
+# the workflow from the GOOGLE_PLAY_JSON_KEY secret and deleted afterwards.
+
+default_platform(:android)
+
+platform :android do
+  desc "Upload a built Google release bundle to the internal track on Google Play. Pass aab:<path>"
+  lane :upload_internal do |options|
+    UI.user_error!("Pass the bundle to upload as aab:<path>") if options[:aab].to_s.empty?
+
+    upload_to_play_store(
+      track: 'internal',
+      aab: options[:aab],
+      release_status: 'completed',
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+
+  desc "Upload the store listing - title, descriptions, feature graphic, icon and screenshots - for every locale under fastlane/metadata/android. Touches no build or track. Dry-runs unless validate_only:false"
+  lane :play_listing do |options|
+    # Anything but an explicit `validate_only:false` stays a dry run, so a typo
+    # in the dispatch input can only ever under-publish.
+    validate_only = options[:validate_only].to_s != 'false'
+
+    upload_to_play_store(
+      # Only changelogs are per-track, and those are skipped below; the track
+      # is named so supply has a release to resolve, nothing on it changes.
+      track: 'production',
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_metadata: false,
+      skip_upload_changelogs: true,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      # sha256-compare images and screenshots so an unchanged asset is not
+      # re-uploaded, and a run with nothing to change produces no edit.
+      sync_image_upload: true,
+      # A committed listing that is sent for review cancels and restarts any
+      # release review in flight (see promote.yml). Hold it; a human sends it
+      # for review from the Play Console.
+      changes_not_sent_for_review: true,
+      validate_only: validate_only,
+    )
+  end
+
+  desc "Write every release on a Play track (status, version codes, user fraction) as JSON. Pass track:<name> out:<path>. Reads only; the edit is discarded"
+  lane :play_track_releases do |options|
+    UI.user_error!("Pass track:<name> and out:<path>") if options[:track].to_s.empty? || options[:out].to_s.empty?
+
+    require 'json'
+    require 'supply'
+    require 'supply/options'
+    require 'supply/reader'
+
+    # Lane code runs in ./fastlane, and the Appfile's key path is relative to the project root.
+    Dir.chdir('..') do
+      Supply.config = FastlaneCore::Configuration.create(Supply::Options.available_options, { track: options[:track].to_s })
+      track = Supply::Reader.new.track_meta
+      releases = (track&.releases || []).map do |release|
+        {
+          status: release.status,
+          version_codes: (release.version_codes || []).map(&:to_i),
+          user_fraction: release.user_fraction,
+        }
+      end
+      File.write(options[:out], JSON.pretty_generate(releases))
+    end
+  end
+end

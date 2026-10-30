@@ -1,0 +1,84 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.discovery.export
+
+import org.meshtastic.core.common.util.DateFormatter
+import org.meshtastic.core.common.util.DurationUnitLabels
+import org.meshtastic.core.common.util.MeasurementSystem
+import org.meshtastic.core.common.util.MetricFormatter
+import org.meshtastic.core.common.util.NumberFormatter
+import org.meshtastic.core.common.util.formatDuration
+import org.meshtastic.core.database.entity.DiscoveredNodeEntity
+import org.meshtastic.core.database.entity.DiscoveryPresetResultEntity
+import org.meshtastic.core.database.entity.DiscoverySessionEntity
+import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.util.toDistanceString
+import kotlin.math.roundToInt
+import kotlin.time.DurationUnit
+
+internal object DiscoveryReportFormatter {
+
+    // The report's labels are English, so its durations are too.
+    private fun reportDuration(totalSeconds: Long): String =
+        formatDuration(totalSeconds, DurationUnitLabels.English, smallest = DurationUnit.MINUTES)
+
+    fun formatSessionDate(session: DiscoverySessionEntity): String = DateFormatter.formatDateTime(session.timestamp)
+
+    fun formatSessionOverviewLines(session: DiscoverySessionEntity): List<Pair<String, String>> = listOf(
+        "Date" to formatSessionDate(session),
+        "Total unique nodes" to session.totalUniqueNodes.toString(),
+        "Total dwell time" to reportDuration(session.totalDwellSeconds),
+        "Status" to session.completionStatus.replaceFirstChar { it.uppercase() },
+        "Channel utilization" to "${NumberFormatter.format(session.avgChannelUtilization, 1)}%",
+        "Total messages" to session.totalMessages.toString(),
+        "Total sensor packets" to session.totalSensorPackets.toString(),
+    )
+
+    fun formatPresetLines(result: DiscoveryPresetResultEntity): List<Pair<String, String>> = buildList {
+        add("Unique nodes" to result.uniqueNodes.toString())
+        add("Direct neighbors" to result.directNeighborCount.toString())
+        add("Mesh neighbors" to result.meshNeighborCount.toString())
+        add("Dwell time" to reportDuration(result.dwellDurationSeconds))
+        add("Channel utilization" to "${NumberFormatter.format(result.avgChannelUtilization, 1)}%")
+        add("Airtime rate" to "${NumberFormatter.format(result.avgAirtimeRate, 1)}%")
+        add("Packet success" to "${NumberFormatter.format(result.packetSuccessRate, 1)}%")
+        add("Messages" to result.messageCount.toString())
+        add("Packets TX" to result.numPacketsTx.toString())
+        add("Packets RX" to result.numPacketsRx.toString())
+        val aiText = result.aiSummary
+        if (!aiText.isNullOrBlank()) {
+            add("Analysis" to aiText)
+        }
+    }
+
+    fun formatNodeLine(node: DiscoveredNodeEntity, measurementSystem: MeasurementSystem): String = buildString {
+        append(node.longName ?: node.shortName ?: NodeAddress.numToDefaultId(node.nodeNum.toInt()))
+        append(" | ${node.neighborType}")
+        append(" | SNR: ${MetricFormatter.snr(node.snr)}")
+        append(" | RSSI: ${MetricFormatter.rssi(node.rssi)}")
+        val distance = node.distanceFromUser
+        if (distance != null) {
+            append(" | ${distance.roundToInt().toDistanceString(measurementSystem)}")
+        }
+    }
+
+    fun generateFileName(session: DiscoverySessionEntity, extension: String): String {
+        val dateStr =
+            DateFormatter.formatDateTime(session.timestamp).replace(" ", "_").replace("/", "-").replace(":", "-")
+        return "meshtastic_discovery_$dateStr.$extension"
+    }
+}

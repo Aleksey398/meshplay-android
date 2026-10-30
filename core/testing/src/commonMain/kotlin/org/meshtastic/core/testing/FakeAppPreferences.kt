@@ -1,0 +1,466 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.testing
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import org.meshtastic.core.model.DeviceType
+import org.meshtastic.core.repository.AnalyticsPrefs
+import org.meshtastic.core.repository.AppFunctionsPrefs
+import org.meshtastic.core.repository.AppFunctionsSetting
+import org.meshtastic.core.repository.AppPreferences
+import org.meshtastic.core.repository.CustomEmojiPrefs
+import org.meshtastic.core.repository.FilterPrefs
+import org.meshtastic.core.repository.HomoglyphPrefs
+import org.meshtastic.core.repository.MapCameraPosition
+import org.meshtastic.core.repository.MapConsentPrefs
+import org.meshtastic.core.repository.MapFilterPrefs
+import org.meshtastic.core.repository.MapPrefs
+import org.meshtastic.core.repository.MapTileProviderPrefs
+import org.meshtastic.core.repository.MeshPrefs
+import org.meshtastic.core.repository.NodeFilterPrefs
+import org.meshtastic.core.repository.RadioPrefs
+import org.meshtastic.core.repository.UiPrefs
+
+class FakeAnalyticsPrefs : AnalyticsPrefs {
+    override val analyticsAllowed = MutableStateFlow(true)
+
+    override fun toggleAnalyticsAllowed() {
+        analyticsAllowed.update { !it }
+    }
+
+    override val installId = MutableStateFlow("fake-install-id")
+}
+
+class FakeHomoglyphPrefs : HomoglyphPrefs {
+    override val homoglyphEncodingEnabled = MutableStateFlow(false)
+
+    override fun toggleHomoglyphEncodingEnabled() {
+        homoglyphEncodingEnabled.update { !it }
+    }
+}
+
+class FakeFilterPrefs : FilterPrefs {
+    override val filterEnabled = MutableStateFlow(false)
+
+    override fun setFilterEnabled(enabled: Boolean) {
+        filterEnabled.value = enabled
+    }
+
+    override val filterWords = MutableStateFlow(emptySet<String>())
+
+    override fun setFilterWords(words: Set<String>) {
+        filterWords.value = words
+    }
+}
+
+class FakeCustomEmojiPrefs : CustomEmojiPrefs {
+    override val customEmojiFrequency = MutableStateFlow<String?>(null)
+    override val preferredSkinToneIndex = MutableStateFlow(0)
+
+    override fun setCustomEmojiFrequency(frequency: String?) {
+        customEmojiFrequency.value = frequency
+    }
+
+    override fun setPreferredSkinToneIndex(index: Int) {
+        preferredSkinToneIndex.value = index
+    }
+}
+
+@Suppress("TooManyFunctions")
+class FakeUiPrefs : UiPrefs {
+    override val appIntroCompleted = MutableStateFlow(false)
+
+    override fun setAppIntroCompleted(completed: Boolean) {
+        appIntroCompleted.value = completed
+    }
+
+    override val theme = MutableStateFlow(0)
+
+    override fun setTheme(value: Int) {
+        theme.value = value
+    }
+
+    override val unitsOverride = MutableStateFlow(0)
+
+    override fun setUnitsOverride(value: Int) {
+        unitsOverride.value = value
+    }
+
+    override val locale = MutableStateFlow("en")
+
+    override fun setLocale(languageTag: String) {
+        locale.value = languageTag
+    }
+
+    override val nodeSort = MutableStateFlow(0)
+
+    override fun setNodeSort(value: Int) {
+        nodeSort.value = value
+    }
+
+    override val nodeFilters = MutableStateFlow(NodeFilterPrefs())
+
+    override fun updateNodeFilters(transform: (NodeFilterPrefs) -> NodeFilterPrefs) {
+        // update, not read-then-assign: the real one is transactional, and a fake that loses a concurrent write
+        // would pass tests the production path fails.
+        nodeFilters.update(transform)
+    }
+
+    override val hasShownNotPairedWarning = MutableStateFlow(false)
+
+    override fun setHasShownNotPairedWarning(shown: Boolean) {
+        hasShownNotPairedWarning.value = shown
+    }
+
+    override val showQuickChat = MutableStateFlow(true)
+
+    override fun toggleShowQuickChat() {
+        showQuickChat.update { !it }
+    }
+
+    override val showFullMessageTimestamps = MutableStateFlow(false)
+
+    override fun setShowFullMessageTimestamps(show: Boolean) {
+        showFullMessageTimestamps.value = show
+    }
+
+    override val eventThemeEnabled = MutableStateFlow(true)
+
+    override fun setEventThemeEnabled(enabled: Boolean) {
+        eventThemeEnabled.value = enabled
+    }
+
+    override val bleAutoScan = MutableStateFlow(false)
+
+    override fun setBleAutoScan(enabled: Boolean) {
+        bleAutoScan.value = enabled
+    }
+
+    override val networkAutoScan = MutableStateFlow(false)
+
+    override fun setNetworkAutoScan(enabled: Boolean) {
+        networkAutoScan.value = enabled
+    }
+
+    override val selectedConnectionTransport = MutableStateFlow<DeviceType?>(null)
+
+    override fun setSelectedConnectionTransport(type: DeviceType) {
+        selectedConnectionTransport.value = type
+    }
+
+    override val firmwareUpdateNotificationKeys = MutableStateFlow<Set<String>>(emptySet())
+
+    override fun recordFirmwareUpdateNotificationKey(key: String) {
+        firmwareUpdateNotificationKeys.value += key
+    }
+
+    override val keptUnheardNodes = MutableStateFlow<Set<Int>>(emptySet())
+
+    override fun keepUnheardNodes(nodeNums: Set<Int>) {
+        keptUnheardNodes.value += nodeNums
+    }
+
+    override fun forgetKeptUnheardNodes(nodeNums: Set<Int>) {
+        keptUnheardNodes.value -= nodeNums
+    }
+
+    private val nodeLocationEnabled = mutableMapOf<Int, MutableStateFlow<Boolean>>()
+
+    override fun shouldProvideNodeLocation(nodeNum: Int): StateFlow<Boolean> =
+        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(true) }
+
+    override fun setShouldProvideNodeLocation(nodeNum: Int, provide: Boolean) {
+        nodeLocationEnabled.getOrPut(nodeNum) { MutableStateFlow(provide) }.value = provide
+    }
+
+    override val nodeListDensity = MutableStateFlow("COMPLETE")
+
+    override fun setNodeListDensity(value: String) {
+        nodeListDensity.value = value
+    }
+
+    override val shouldShowPower = MutableStateFlow(true)
+
+    override fun setShouldShowPower(value: Boolean) {
+        shouldShowPower.value = value
+    }
+
+    override val shouldShowLastHeard = MutableStateFlow(true)
+
+    override fun setShouldShowLastHeard(value: Boolean) {
+        shouldShowLastHeard.value = value
+    }
+
+    override val lastHeardIsRelative = MutableStateFlow(false)
+
+    override fun setLastHeardIsRelative(value: Boolean) {
+        lastHeardIsRelative.value = value
+    }
+
+    override val shouldShowLocation = MutableStateFlow(true)
+
+    override fun setShouldShowLocation(value: Boolean) {
+        shouldShowLocation.value = value
+    }
+
+    override val shouldShowHops = MutableStateFlow(true)
+
+    override fun setShouldShowHops(value: Boolean) {
+        shouldShowHops.value = value
+    }
+
+    override val shouldShowSignal = MutableStateFlow(true)
+
+    override fun setShouldShowSignal(value: Boolean) {
+        shouldShowSignal.value = value
+    }
+
+    override val shouldShowChannel = MutableStateFlow(true)
+
+    override fun setShouldShowChannel(value: Boolean) {
+        shouldShowChannel.value = value
+    }
+
+    override val shouldShowRole = MutableStateFlow(true)
+
+    override fun setShouldShowRole(value: Boolean) {
+        shouldShowRole.value = value
+    }
+
+    override val shouldShowTelemetry = MutableStateFlow(true)
+
+    override fun setShouldShowTelemetry(value: Boolean) {
+        shouldShowTelemetry.value = value
+    }
+
+    override val chirpyHopBestScore = MutableStateFlow(0)
+
+    override fun recordChirpyHopScore(score: Int) {
+        chirpyHopBestScore.update { maxOf(it, score) }
+    }
+}
+
+@Suppress("TooManyFunctions")
+class FakeMapPrefs : MapPrefs {
+    private var cameraPosition: MapCameraPosition? = null
+
+    override val mapStyle = MutableStateFlow(0)
+
+    override fun setMapStyle(style: Int) {
+        mapStyle.value = style
+    }
+
+    override suspend fun awaitMapStyle(): Int = mapStyle.value
+
+    override val mapFilters = MutableStateFlow(MapFilterPrefs())
+
+    override fun updateMapFilters(transform: (MapFilterPrefs) -> MapFilterPrefs) {
+        mapFilters.update(transform)
+    }
+
+    override val hiddenLayerUrls = MutableStateFlow<Set<String>>(emptySet())
+
+    override fun updateHiddenLayerUrls(transform: (Set<String>) -> Set<String>) {
+        hiddenLayerUrls.value = transform(hiddenLayerUrls.value)
+    }
+
+    override suspend fun awaitHiddenLayerUrls(): Set<String> = hiddenLayerUrls.value
+
+    override val layerOpacity = MutableStateFlow<Set<String>>(emptySet())
+
+    override fun updateLayerOpacity(transform: (Set<String>) -> Set<String>) {
+        layerOpacity.value = transform(layerOpacity.value)
+    }
+
+    override val networkMapLayers = MutableStateFlow<Set<String>>(emptySet())
+
+    override fun updateNetworkMapLayers(transform: (Set<String>) -> Set<String>) {
+        networkMapLayers.value = transform(networkMapLayers.value)
+    }
+
+    override suspend fun awaitNetworkMapLayers(): Set<String> = networkMapLayers.value
+
+    override fun setCameraPosition(position: MapCameraPosition) {
+        cameraPosition = position
+    }
+
+    override suspend fun awaitCameraPosition(): MapCameraPosition? = cameraPosition
+
+    override val meshHudCoachSeen = MutableStateFlow(false)
+
+    override fun setMeshHudCoachSeen(seen: Boolean) {
+        meshHudCoachSeen.value = seen
+    }
+}
+
+class FakeMapConsentPrefs : MapConsentPrefs {
+    private val consent = mutableMapOf<Int?, MutableStateFlow<Boolean>>()
+
+    override fun shouldReportLocation(nodeNum: Int?): StateFlow<Boolean> =
+        consent.getOrPut(nodeNum) { MutableStateFlow(false) }
+
+    override fun setShouldReportLocation(nodeNum: Int?, report: Boolean) {
+        consent.getOrPut(nodeNum) { MutableStateFlow(report) }.value = report
+    }
+}
+
+class FakeMapTileProviderPrefs : MapTileProviderPrefs {
+    override val customTileProviders = MutableStateFlow<String?>(null)
+    override val selectedCustomTileProviderId = MutableStateFlow<String?>(null)
+
+    override suspend fun awaitCustomTileProviders(): String? = customTileProviders.value
+
+    override suspend fun awaitSelectedCustomTileProviderId(): String? = selectedCustomTileProviderId.value
+
+    override suspend fun setCustomTileProviders(providers: String?) {
+        customTileProviders.value = providers
+    }
+
+    override suspend fun setSelectedCustomTileProviderId(providerId: String?) {
+        selectedCustomTileProviderId.value = providerId
+    }
+}
+
+class FakeRadioPrefs : RadioPrefs {
+    override val devAddr = MutableStateFlow<String?>(null)
+
+    override suspend fun awaitDevAddr(): String? = devAddr.value
+
+    override val devName = MutableStateFlow<String?>(null)
+
+    override fun setDevAddr(address: String?) {
+        devAddr.value = address
+    }
+
+    override fun setDevName(name: String?) {
+        devName.value = name
+    }
+}
+
+class FakeMeshPrefs : MeshPrefs {
+    override val deviceAddress = MutableStateFlow<String?>(null)
+
+    override fun setDeviceAddress(address: String?) {
+        deviceAddress.value = address
+    }
+
+    override suspend fun awaitDeviceAddress(): String? = deviceAddress.value
+
+    private val lastRequest = mutableMapOf<String?, MutableStateFlow<Int>>()
+
+    override fun getStoreForwardLastRequest(address: String?): StateFlow<Int> =
+        lastRequest.getOrPut(address) { MutableStateFlow(0) }
+
+    override fun setStoreForwardLastRequest(address: String?, timestamp: Int) {
+        lastRequest.getOrPut(address) { MutableStateFlow(timestamp) }.value = timestamp
+    }
+}
+
+class FakeAppFunctionsPrefs : AppFunctionsPrefs {
+    override val masterEnabled = MutableStateFlow(true)
+    override val sendMessageEnabled = MutableStateFlow(true)
+    override val getMeshStatusEnabled = MutableStateFlow(true)
+    override val getNodeListEnabled = MutableStateFlow(true)
+    override val getChannelInfoEnabled = MutableStateFlow(true)
+    override val getDeviceStatusEnabled = MutableStateFlow(true)
+    override val getNodeDetailsEnabled = MutableStateFlow(true)
+    override val getMeshMetricsEnabled = MutableStateFlow(true)
+    override val getRecentMessagesEnabled = MutableStateFlow(true)
+    override val getUnreadSummaryEnabled = MutableStateFlow(true)
+
+    override fun toggle(setting: AppFunctionsSetting) {
+        val flow =
+            when (setting) {
+                AppFunctionsSetting.MASTER -> masterEnabled
+                AppFunctionsSetting.SEND_MESSAGE -> sendMessageEnabled
+                AppFunctionsSetting.GET_MESH_STATUS -> getMeshStatusEnabled
+                AppFunctionsSetting.GET_NODE_LIST -> getNodeListEnabled
+                AppFunctionsSetting.GET_CHANNEL_INFO -> getChannelInfoEnabled
+                AppFunctionsSetting.GET_DEVICE_STATUS -> getDeviceStatusEnabled
+                AppFunctionsSetting.GET_NODE_DETAILS -> getNodeDetailsEnabled
+                AppFunctionsSetting.GET_MESH_METRICS -> getMeshMetricsEnabled
+                AppFunctionsSetting.GET_RECENT_MESSAGES -> getRecentMessagesEnabled
+                AppFunctionsSetting.GET_UNREAD_SUMMARY -> getUnreadSummaryEnabled
+            }
+        flow.update { !it }
+    }
+}
+
+class FakeAppPreferences : AppPreferences {
+    override val analytics = FakeAnalyticsPrefs()
+    override val appFunctions = FakeAppFunctionsPrefs()
+    override val homoglyph = FakeHomoglyphPrefs()
+    override val filter = FakeFilterPrefs()
+    override val meshLog = FakeMeshLogPrefs()
+    override val emoji = FakeCustomEmojiPrefs()
+    override val ui = FakeUiPrefs()
+    override val map = FakeMapPrefs()
+    override val mapConsent = FakeMapConsentPrefs()
+    override val mapTileProvider = FakeMapTileProviderPrefs()
+    override val radio = FakeRadioPrefs()
+    override val mesh = FakeMeshPrefs()
+    override val tak = FakeTakPrefs()
+    override val discovery = FakeDiscoveryPrefs()
+}
+
+class FakeDiscoveryPrefs : org.meshtastic.core.repository.DiscoveryPrefs {
+    override val dwellMinutes = MutableStateFlow(org.meshtastic.core.repository.DiscoveryPrefs.DEFAULT_DWELL_MINUTES)
+
+    override fun setDwellMinutes(minutes: Int) {
+        dwellMinutes.value = minutes
+    }
+
+    override val selectedPresets = MutableStateFlow<Set<String>>(emptySet())
+
+    override fun setSelectedPresets(presets: Set<String>) {
+        selectedPresets.value = presets
+    }
+
+    override val aiEnabled = MutableStateFlow(true)
+
+    override fun setAiEnabled(enabled: Boolean) {
+        aiEnabled.value = enabled
+    }
+
+    override val topologyOverlayEnabled = MutableStateFlow(false)
+
+    override fun setTopologyOverlayEnabled(enabled: Boolean) {
+        topologyOverlayEnabled.value = enabled
+    }
+}
+
+class FakeTakPrefs : org.meshtastic.core.repository.TakPrefs {
+    override val isTakServerEnabled = MutableStateFlow(false)
+
+    override fun setTakServerEnabled(enabled: Boolean) {
+        isTakServerEnabled.value = enabled
+    }
+
+    override val isMeshToCotEnabled = MutableStateFlow(false)
+
+    override fun setMeshToCotEnabled(enabled: Boolean) {
+        isMeshToCotEnabled.value = enabled
+    }
+
+    override val takServerChannel = MutableStateFlow(0)
+
+    override fun setTakServerChannel(index: Int) {
+        takServerChannel.value = index
+    }
+}
