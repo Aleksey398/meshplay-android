@@ -44,7 +44,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.border
+import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -265,7 +265,7 @@ private fun StatusPill(ui: GameUiState, modifier: Modifier = Modifier) {
             .clip(CircleShape)
             .background(container)
             .then(
-                if (!filled && !ui.isFinished) {
+                if (!filled && !isFinished) {
                     Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                 } else {
                     Modifier
