@@ -80,7 +80,7 @@ class ChessPositionTest {
         position = position.applyUci("e2e1")!!
         val after = position.toFen()
         // Neither rook has moved, but both kings did: no castling rights remain for either side.
-        assertEquals("r6r/4k3/8/8/8/8/8/R3K3 b - - 3 3", after)
+        assertEquals("r6r/4k3/8/8/8/8/8/R3K2R b - - 3 3", after)
         assertNull(position.applyUci("e1g1"), "castling must be illegal after the right was lost")
     }
 

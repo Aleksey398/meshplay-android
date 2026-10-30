@@ -57,7 +57,8 @@ class CheckersAndTicTacToeEngineTest {
         val position = CheckersPosition.fromBoardString(board, whiteToMove = true)!!
         assertEquals(listOf("c3e5"), position.legalMoves())
         val after = position.applyMove("c3e5")!!
-        assertEquals(GameResult.BLACK_WINS, after.result, "black has no pieces left")
+        // Black is to move with no pieces left, so black loses.
+        assertEquals(GameResult.WHITE_WINS, after.result, "black has no pieces left")
     }
 
     @Test
@@ -84,13 +85,14 @@ class CheckersAndTicTacToeEngineTest {
     @Test
     fun `checkers crowning ends the turn even mid-capture`() {
         // White man b6 jumps the black man on c7 and crowns on d8; the turn then passes.
+        // Row 1 is rank 7 and row 2 is rank 6 (rank 8 first).
         val board =
             "........" +
-                "........" +
                 "..b....." +
-                "........" +
-                "........" +
                 ".w......" +
+                "........" +
+                "........" +
+                "........" +
                 "........" +
                 "........"
         val position = CheckersPosition.fromBoardString(board, whiteToMove = true)!!

@@ -189,12 +189,15 @@ data class ChessPosition(
         return false
     }
 
-    private fun generateLegalMoves(): List<ChessMove> =
-        generatePseudoLegal().filter { move ->
+    private fun generateLegalMoves(): List<ChessMove> {
+        val moverIsWhite = whiteToMove
+        return generatePseudoLegal().filter { move ->
             val next = applyForLegality(move)
-            val kingSq = next.board.indexOf(if (next.whiteToMove) WHITE_KING else BLACK_KING)
-            kingSq >= 0 && !next.isAttacked(kingSq, byWhite = !next.whiteToMove)
+            // The mover's own king must be safe after the move.
+            val kingSq = next.board.indexOf(if (moverIsWhite) WHITE_KING else BLACK_KING)
+            kingSq >= 0 && !next.isAttacked(kingSq, byWhite = !moverIsWhite)
         }
+    }
 
     /** Apply without history bookkeeping — only used inside legality filtering. */
     private fun applyForLegality(move: ChessMove): ChessPosition = apply(move).copy(history = history)
@@ -300,7 +303,7 @@ data class ChessPosition(
     private fun generateSlideMoves(sq: Int, dirs: IntArray, moves: MutableList<ChessMove>) {
         for (dir in dirs) {
             var target = sq + dir
-            while (target in 0..63 && kotlin.math.abs(fileOf(target) - fileOf(target - dir)) == 1) {
+            while (target in 0..63 && fileOf(target) - fileOf(target - dir) == fileStep(dir)) {
                 val occupant = board[target]
                 if (occupant == EMPTY) {
                     moves.add(ChessMove(sq, target))
@@ -341,7 +344,7 @@ data class ChessPosition(
         val queen = if (byWhite) WHITE_QUEEN else BLACK_QUEEN
         for (dir in ROOK_DIRS) {
             var from = sq + dir
-            while (from in 0..63 && kotlin.math.abs(fileOf(from) - fileOf(from - dir)) == 1) {
+            while (from in 0..63 && fileOf(from) - fileOf(from - dir) == fileStep(dir)) {
                 val occupant = board[from]
                 if (occupant != EMPTY) {
                     if (occupant == rook || occupant == queen) return true
@@ -352,7 +355,7 @@ data class ChessPosition(
         }
         for (dir in BISHOP_DIRS) {
             var from = sq + dir
-            while (from in 0..63 && kotlin.math.abs(fileOf(from) - fileOf(from - dir)) == 1) {
+            while (from in 0..63 && fileOf(from) - fileOf(from - dir) == fileStep(dir)) {
                 val occupant = board[from]
                 if (occupant != EMPTY) {
                     if (occupant == bishop || occupant == queen) return true
@@ -534,6 +537,13 @@ data class ChessPosition(
         }
 
         fun fileOf(sq: Int): Int = sq and 7
+
+        /** File delta of one step along [dir]; guards the ray walks against board wrap. */
+        private fun fileStep(dir: Int): Int = when (dir) {
+            1, 9, -7 -> 1
+            -1, -9, 7 -> -1
+            else -> 0
+        }
 
         fun rankOf(sq: Int): Int = sq shr 3
     }

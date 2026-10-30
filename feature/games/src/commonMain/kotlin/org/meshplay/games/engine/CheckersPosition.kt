@@ -65,12 +65,11 @@ data class CheckersPosition(
         var piece = next[move.from]
         next[move.from] = EMPTY
         val lastLanding = move.landings.last()
-        // Remove every captured piece along the chain.
+        // Remove every captured piece along the chain (a diagonal double-step spans two files).
         var from = move.from
         for (landing in move.landings) {
-            val jumped = (from + landing) / 2
-            if (kotlin.math.abs(landing - from) == 16) {
-                next[jumped] = EMPTY
+            if (kotlin.math.abs(fileOf(landing) - fileOf(from)) == 2) {
+                next[(from + landing) / 2] = EMPTY
             }
             from = landing
         }
@@ -81,7 +80,8 @@ data class CheckersPosition(
             piece = BLACK_KING
         }
         next[lastLanding] = piece
-        val captured = move.landings.size > 1 || kotlin.math.abs(lastLanding - move.from) == 16
+        val captured = move.landings.size > 1 ||
+            kotlin.math.abs(fileOf(lastLanding) - fileOf(move.from)) == 2
         return CheckersPosition(
             board = next,
             whiteToMove = !whiteToMove,

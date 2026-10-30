@@ -102,7 +102,7 @@ object GameMessageCodec {
         val inner = text.substring(1, text.length - 1)
         val fields = inner.split('|')
         if (fields.size != FIELD_COUNT || fields[0] != TAG) return null
-        val kind = GameKind.fromWireTag(fields[0]) ?: return null
+        val kind = GameKind.fromWireTag(fields[1]) ?: return null
         val sessionId = fields[4].toIntOrNull() ?: return null
         if (sessionId !in 0..MAX_SESSION_ID) return null
         val type = fields[2]
