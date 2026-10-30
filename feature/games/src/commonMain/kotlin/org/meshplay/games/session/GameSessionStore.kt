@@ -49,7 +49,7 @@ class GameSessionStore(private val dataStore: AppDataStore, dispatchers: Corouti
 
     val sessions: StateFlow<List<GameSession>> =
         dataStore.data
-            .map { prefs -> decode(prefs[KEY]?.orEmpty()) }
+            .map { prefs -> decode(prefs[KEY]) }
             .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /** Sessions for one conversation. */
@@ -61,7 +61,7 @@ class GameSessionStore(private val dataStore: AppDataStore, dispatchers: Corouti
     /** Inserts or replaces the session with the same id in the same conversation. */
     suspend fun upsert(session: GameSession) {
         dataStore.edit { prefs ->
-            val current = decode(prefs[KEY]?.orEmpty()).filterNot {
+            val current = decode(prefs[KEY]).filterNot {
                 it.sessionId == session.sessionId && it.contactKey == session.contactKey
             }
             val next = (current + session).sortedByDescending { it.updatedAt }
@@ -71,14 +71,14 @@ class GameSessionStore(private val dataStore: AppDataStore, dispatchers: Corouti
 
     suspend fun remove(sessionId: Int, contactKey: String) {
         dataStore.edit { prefs ->
-            val current = decode(prefs[KEY]?.orEmpty())
+            val current = decode(prefs[KEY])
             val next = current.filterNot { it.sessionId == sessionId && it.contactKey == contactKey }
             prefs[KEY] = json.encodeToString(serializer, next)
         }
     }
 
-    private fun decode(raw: String): List<GameSession> =
-        if (raw.isEmpty()) {
+    private fun decode(raw: String?): List<GameSession> =
+        if (raw.isNullOrEmpty()) {
             emptyList()
         } else {
             runCatching { json.decodeFromString(serializer, raw) }
