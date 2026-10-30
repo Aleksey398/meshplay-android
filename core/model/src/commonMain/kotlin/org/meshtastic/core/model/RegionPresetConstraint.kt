@@ -1,0 +1,159 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.model
+
+import org.meshtastic.proto.Config.LoRaConfig.ModemPreset
+import org.meshtastic.proto.Config.LoRaConfig.RegionCode
+import org.meshtastic.proto.LoRaRegionPresetMap
+
+/**
+ * The modem presets the firmware advertised as legal for one LoRa region, decoded from a [LoRaRegionPresetMap].
+ *
+ * @property presets the presets that are legal in the region.
+ * @property defaultPreset the firmware's default preset for the region (always one of [presets]).
+ * @property licensedOnly true when the region's presets are for licensed operators only (e.g. amateur bands); the whole
+ *   group is gated, not individual presets.
+ */
+data class RegionPresetConstraint(
+    val presets: List<ModemPreset>,
+    val defaultPreset: ModemPreset,
+    val licensedOnly: Boolean,
+) {
+    /** True when an operator with the given licensing state may not select any preset in this region. */
+    fun isGated(isLicensed: Boolean): Boolean = licensedOnly && !isLicensed
+}
+
+private val PRESET_REGIONS_WITHOUT_MAP: Map<ModemPreset, Set<RegionCode>> = run {
+    val narrow =
+        setOf(
+            RegionCode.EU_N_868,
+            RegionCode.ITU2_125CM,
+            RegionCode.ITU1_70CM,
+            RegionCode.ITU2_70CM,
+            RegionCode.ITU3_70CM,
+        )
+    val tiny = setOf(RegionCode.ITU1_2M, RegionCode.ITU2_2M, RegionCode.ITU3_2M)
+    val lite = setOf(RegionCode.EU_866)
+    mapOf(
+        ModemPreset.LITE_FAST to lite,
+        ModemPreset.LITE_SLOW to lite,
+        ModemPreset.NARROW_FAST to narrow,
+        ModemPreset.NARROW_SLOW to narrow,
+        ModemPreset.TINY_FAST to tiny,
+        ModemPreset.TINY_SLOW to tiny,
+    )
+}
+
+/**
+ * Whether firmware accepts this preset in [region], for a radio that sent no [LoRaRegionPresetMap]. Lite, Narrow and
+ * Tiny are legal only in the regions firmware enforces; every other preset is unconstrained here. Not a substitute for
+ * the map: callers apply it only when the map is absent.
+ */
+fun ModemPreset.isLegalInRegionWithoutMap(region: RegionCode): Boolean =
+    PRESET_REGIONS_WITHOUT_MAP[this]?.contains(region) ?: true
+
+/**
+ * Resolves the [RegionPresetConstraint] the firmware advertised for [region], or `null` when there is no constraint
+ * information and the client must therefore NOT restrict the preset list. A `null` result happens when:
+ * - the map is `null` (firmware older than 2.8 never sends it),
+ * - [region] is absent from `region_groups` (no firmware table entry — treated as unconstrained),
+ * - the referenced `group_index` is out of range (defensive against a malformed map), or
+ * - the referenced group has no presets (a degenerate/malformed group — must not collapse the picker to nothing).
+ */
+@Suppress("ReturnCount") // Guard clauses for defensive null checks and missing lookups are idiomatic
+fun LoRaRegionPresetMap?.constraintFor(region: RegionCode): RegionPresetConstraint? {
+    if (this == null) return null
+    val entry = region_groups.firstOrNull { it.region == region } ?: return null
+    val group = groups.getOrNull(entry.group_index)?.takeIf { it.presets.isNotEmpty() } ?: return null
+    return RegionPresetConstraint(
+        presets = group.presets,
+        defaultPreset = group.default_preset,
+        licensedOnly = group.licensed_only,
+    )
+}
+
+/**
+ * Returns the modem preset the LoRa form should hold for [region] given the currently-selected [current] preset.
+ *
+ * Keeps [current] when it is still legal in [region]; otherwise falls back to the region's default preset (and, if that
+ * is somehow not in the legal set, the first legal preset). Returns [current] unchanged when [region] is unconstrained.
+ * Licensing is intentionally NOT considered here — auto-swap is about legality; selectability is decided separately by
+ * [RegionPresetConstraint.isGated].
+ */
+fun LoRaRegionPresetMap?.repairPresetFor(region: RegionCode, current: ModemPreset): ModemPreset {
+    val constraint = constraintFor(region) ?: return current
+    return when {
+        current in constraint.presets -> current
+        constraint.defaultPreset in constraint.presets -> constraint.defaultPreset
+        else -> constraint.presets.firstOrNull() ?: current
+    }
+}
+
+/**
+ * Returns the modem preset the LoRa form should hold when the region changes from [previousRegion] to [newRegion] with
+ * [current] selected.
+ *
+ * Keeps [current] (legality-repaired via [repairPresetFor]) except at fresh setup: when [previousRegion] is UNSET and
+ * [current] is the [ModemPreset.LONG_FAST] placeholder a factory-flashed node reports (proto default), a region default
+ * is adopted instead: the app's [firstSetupDefaultFor] where the firmware map confirms it, else the map's own default.
+ * Any other preset at UNSET was set deliberately (e.g. a vendor build pinning USERPREFS_LORACONFIG_MODEM_PRESET) and is
+ * kept.
+ *
+ * A build that pins a preset can also advertise it as an UNSET map entry (firmware #11507), stating outright that the
+ * preset is deliberate; that keeps even a pinned LONG_FAST, which the placeholder heuristic alone cannot distinguish.
+ */
+fun LoRaRegionPresetMap?.presetForRegionChange(
+    previousRegion: RegionCode,
+    newRegion: RegionCode,
+    current: ModemPreset,
+): ModemPreset {
+    val repaired = repairPresetFor(newRegion, current)
+    val pinned = constraintFor(RegionCode.UNSET) != null
+    val freshSetup = previousRegion == RegionCode.UNSET && !pinned && current == ModemPreset.LONG_FAST
+    return if (freshSetup) {
+        // Re-repaired: a malformed map's advertised default may not be in its own legal set.
+        val preferred = firstSetupDefaultFor(newRegion) ?: constraintFor(newRegion)?.defaultPreset ?: repaired
+        repairPresetFor(newRegion, preferred)
+    } else {
+        repaired
+    }
+}
+
+/**
+ * The app's first-setup default modem presets, for regions whose default differs from the global
+ * [ChannelOption.DEFAULT]. Firmware's [LoRaRegionPresetMap] advertises only its region-table default, which for US is
+ * not what its own on-device chooser installs on a first-ever setup, so these override the advertised default.
+ */
+private val REGION_DEFAULT_PRESETS = mapOf(RegionCode.US to ModemPreset.LONG_TURBO)
+
+/**
+ * The app's preferred default preset for [region], or `null` when it has no region-specific default and the caller
+ * should fall back to [ChannelOption.DEFAULT] / the current preset.
+ */
+fun defaultPresetFor(region: RegionCode): ModemPreset? = REGION_DEFAULT_PRESETS[region]
+
+/**
+ * The preset a first-ever setup in [region] should install, or `null` to leave the choice alone.
+ *
+ * Gated on the firmware map: an unconstrained node is running firmware whose own region chooser installs the
+ * region-table default, and overriding it there would make the same node set up from the phone and from its screen
+ * disagree. Only a preset the map lists as legal is adopted.
+ */
+fun LoRaRegionPresetMap?.firstSetupDefaultFor(region: RegionCode): ModemPreset? {
+    val constraint = constraintFor(region) ?: return null
+    return defaultPresetFor(region)?.takeIf { it in constraint.presets }
+}

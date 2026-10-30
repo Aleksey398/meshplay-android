@@ -1,0 +1,193 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.navigation
+
+import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.StringResource
+import org.meshtastic.core.model.Capabilities
+import org.meshtastic.core.model.excludes
+import org.meshtastic.core.navigation.Route
+import org.meshtastic.core.navigation.SettingsRoute
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.ambient_lighting
+import org.meshtastic.core.resources.audio
+import org.meshtastic.core.resources.canned_message
+import org.meshtastic.core.resources.detection_sensor
+import org.meshtastic.core.resources.external_notification
+import org.meshtastic.core.resources.ic_cloud
+import org.meshtastic.core.resources.ic_data_usage
+import org.meshtastic.core.resources.ic_group
+import org.meshtastic.core.resources.ic_light_mode
+import org.meshtastic.core.resources.ic_message
+import org.meshtastic.core.resources.ic_notifications
+import org.meshtastic.core.resources.ic_perm_scan_wifi
+import org.meshtastic.core.resources.ic_sensors
+import org.meshtastic.core.resources.ic_settings_remote
+import org.meshtastic.core.resources.ic_speed
+import org.meshtastic.core.resources.ic_terminal
+import org.meshtastic.core.resources.ic_usb
+import org.meshtastic.core.resources.ic_volume_up
+import org.meshtastic.core.resources.mesh_beacon
+import org.meshtastic.core.resources.mqtt
+import org.meshtastic.core.resources.neighbor_info
+import org.meshtastic.core.resources.paxcounter
+import org.meshtastic.core.resources.range_test
+import org.meshtastic.core.resources.remote_hardware
+import org.meshtastic.core.resources.serial
+import org.meshtastic.core.resources.store_forward
+import org.meshtastic.core.resources.tak
+import org.meshtastic.core.resources.telemetry
+import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.Config
+import org.meshtastic.proto.DeviceMetadata
+import org.meshtastic.proto.ExcludedModules
+
+enum class ModuleRoute(
+    val title: StringResource,
+    val route: Route,
+    val icon: DrawableResource? = null,
+    val type: Int = 0,
+    val isSupported: (Capabilities) -> Boolean = { true },
+    val isApplicable: (Config.DeviceConfig.Role?) -> Boolean = { true },
+    val hasReadFanOut: Boolean = false,
+) {
+    MQTT(Res.string.mqtt, SettingsRoute.MQTT, Res.drawable.ic_cloud, AdminMessage.ModuleConfigType.MQTT_CONFIG.value),
+    SERIAL(
+        Res.string.serial,
+        SettingsRoute.Serial,
+        Res.drawable.ic_usb,
+        AdminMessage.ModuleConfigType.SERIAL_CONFIG.value,
+    ),
+    EXT_NOTIFICATION(
+        Res.string.external_notification,
+        SettingsRoute.ExtNotification,
+        Res.drawable.ic_notifications,
+        AdminMessage.ModuleConfigType.EXTNOTIF_CONFIG.value,
+        hasReadFanOut = true,
+    ),
+    STORE_FORWARD(
+        Res.string.store_forward,
+        SettingsRoute.StoreForward,
+        Res.drawable.ic_terminal,
+        AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG.value,
+    ),
+    RANGE_TEST(
+        Res.string.range_test,
+        SettingsRoute.RangeTest,
+        Res.drawable.ic_speed,
+        AdminMessage.ModuleConfigType.RANGETEST_CONFIG.value,
+    ),
+    TELEMETRY(
+        Res.string.telemetry,
+        SettingsRoute.Telemetry,
+        Res.drawable.ic_data_usage,
+        AdminMessage.ModuleConfigType.TELEMETRY_CONFIG.value,
+    ),
+    CANNED_MESSAGE(
+        Res.string.canned_message,
+        SettingsRoute.CannedMessage,
+        Res.drawable.ic_message,
+        AdminMessage.ModuleConfigType.CANNEDMSG_CONFIG.value,
+        hasReadFanOut = true,
+    ),
+    AUDIO(
+        Res.string.audio,
+        SettingsRoute.Audio,
+        Res.drawable.ic_volume_up,
+        AdminMessage.ModuleConfigType.AUDIO_CONFIG.value,
+    ),
+    REMOTE_HARDWARE(
+        Res.string.remote_hardware,
+        SettingsRoute.RemoteHardware,
+        Res.drawable.ic_settings_remote,
+        AdminMessage.ModuleConfigType.REMOTEHARDWARE_CONFIG.value,
+    ),
+    NEIGHBOR_INFO(
+        Res.string.neighbor_info,
+        SettingsRoute.NeighborInfo,
+        Res.drawable.ic_group,
+        AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG.value,
+    ),
+    AMBIENT_LIGHTING(
+        Res.string.ambient_lighting,
+        SettingsRoute.AmbientLighting,
+        Res.drawable.ic_light_mode,
+        AdminMessage.ModuleConfigType.AMBIENTLIGHTING_CONFIG.value,
+    ),
+    DETECTION_SENSOR(
+        Res.string.detection_sensor,
+        SettingsRoute.DetectionSensor,
+        Res.drawable.ic_sensors,
+        AdminMessage.ModuleConfigType.DETECTIONSENSOR_CONFIG.value,
+    ),
+    PAXCOUNTER(
+        Res.string.paxcounter,
+        SettingsRoute.Paxcounter,
+        Res.drawable.ic_perm_scan_wifi,
+        AdminMessage.ModuleConfigType.PAXCOUNTER_CONFIG.value,
+    ),
+    TAK(
+        Res.string.tak,
+        SettingsRoute.TAK,
+        Res.drawable.ic_group,
+        AdminMessage.ModuleConfigType.TAK_CONFIG.value,
+        isSupported = { it.supportsTakConfig },
+        isApplicable = { it == Config.DeviceConfig.Role.TAK || it == Config.DeviceConfig.Role.TAK_TRACKER },
+    ),
+
+    // Reads the module config plus the LoRa config and the primary channel, which the editor's region gate and
+    // channel picker need on a remote node whose connect-time snapshot is empty.
+    MESH_BEACON(
+        Res.string.mesh_beacon,
+        SettingsRoute.MeshBeacon,
+        Res.drawable.ic_perm_scan_wifi,
+        AdminMessage.ModuleConfigType.MESHBEACON_CONFIG.value,
+        isSupported = { it.supportsMeshBeacon },
+        hasReadFanOut = true,
+    ),
+    ;
+
+    /** The `excluded_modules` bit a node sets when this module is compiled out of its firmware. */
+    val excludedAs: ExcludedModules
+        get() =
+            when (this) {
+                MQTT -> ExcludedModules.MQTT_CONFIG
+                SERIAL -> ExcludedModules.SERIAL_CONFIG
+                EXT_NOTIFICATION -> ExcludedModules.EXTNOTIF_CONFIG
+                STORE_FORWARD -> ExcludedModules.STOREFORWARD_CONFIG
+                RANGE_TEST -> ExcludedModules.RANGETEST_CONFIG
+                TELEMETRY -> ExcludedModules.TELEMETRY_CONFIG
+                CANNED_MESSAGE -> ExcludedModules.CANNEDMSG_CONFIG
+                AUDIO -> ExcludedModules.AUDIO_CONFIG
+                REMOTE_HARDWARE -> ExcludedModules.REMOTEHARDWARE_CONFIG
+                NEIGHBOR_INFO -> ExcludedModules.NEIGHBORINFO_CONFIG
+                AMBIENT_LIGHTING -> ExcludedModules.AMBIENTLIGHTING_CONFIG
+                DETECTION_SENSOR -> ExcludedModules.DETECTIONSENSOR_CONFIG
+                PAXCOUNTER -> ExcludedModules.PAXCOUNTER_CONFIG
+                TAK -> ExcludedModules.TAK_CONFIG
+                MESH_BEACON -> ExcludedModules.MESHBEACON_CONFIG
+            }
+
+    companion object {
+        fun filterExcludedFrom(metadata: DeviceMetadata?, role: Config.DeviceConfig.Role?): List<ModuleRoute> {
+            val capabilities = Capabilities(metadata?.firmware_version)
+            return entries.filter {
+                !metadata.excludes(it.excludedAs) && it.isSupported(capabilities) && it.isApplicable(role)
+            }
+        }
+    }
+}

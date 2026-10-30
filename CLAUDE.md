@@ -1,0 +1,44 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+**[AGENTS.md](AGENTS.md)** is the source of truth for rules, architecture, and workflow; the `.skills/` modules hold the detail. This file does not duplicate them — it adds Claude-specific workflow notes and the few commands a fresh session needs immediately.
+
+@AGENTS.md
+
+## Claude-Specific Instructions
+
+- **Skills:** Load only the `.skills/` module relevant to the current task — don't read them all. Start with `.skills/project-overview/SKILL.md` (codebase map, bootstrap, troubleshooting). Each module is symlinked into `.claude/skills/` so it can also be selected by name, since that is the only directory Claude Code discovers skills from.
+- **Plan Mode:** Use it for changes spanning multiple modules; write plans to `.agent_plans/` (git-ignored).
+- **Delegate to keep context lean** (this is a 20+ module KMP repo):
+  - **Broad searches** ("where is X used", "find all implementers of Y") → dispatch the `Explore` subagent so file dumps stay out of the main context; you get back the conclusion.
+  - **Gradle builds/tests/lint** → dispatch the `gradle-runner` subagent. A full `assembleDebug`/`allTests` log is thousands of lines; the subagent returns only pass/fail + failing tests. Don't run heavy `./gradlew` tasks inline.
+  - **Symbol navigation** ("where is this defined", "who calls this", "find implementers") → `rg` for the symbol, then read only the matching range. There is no Kotlin LSP server: none available today handles KMP reliably, so the `LSP` tool answering "No LSP server available for file type: .kt" is expected.
+- **Big files are guarded, not free:** `.claude/settings.json` denies the Crowdin locale `strings.xml` files and prompts before reading the base `strings.xml`, `firmware_releases.json`, `emoji-data.json`, `flatpak-sources*.json` and any `*.keystore`/`*.jks`. For strings, consult `.skills/compose-ui/strings-index.txt` instead of the raw file.
+- **Hooks (`.claude/hooks/`):** `git commit` runs `spotlessApply` on staged Kotlin and re-stages it; `git push` runs `detekt` and blocks on a violation; force-push and `reset --hard` ask first. Editing the base `strings.xml` runs `sort-strings.py`, and a `java.*`/`android.*` import in `commonMain`/`commonTest` or a store-metadata violation blocks the edit. When a subagent finishes with a dirty tree or a commit under 15 minutes old, its HEAD and dirty files are reported back.
+- **Claude-only skills and subagents:** `.claude/skills/` also holds `baseline`, `pr`, `proto-bump`, `crashlytics-triage` and `run-meshtastic-android`; `.claude/agents/` holds `gradle-runner`, `crash-investigator` and `datadog-rum-investigator`.
+
+## Quick Reference
+
+JDK 25 is required. **Bootstrap before any Gradle task** (don't wait to be told) — full details in `.skills/project-overview/SKILL.md`:
+```bash
+# often unset in agent workspaces; macOS, Linux and /opt defaults in that order
+[ -n "$ANDROID_HOME" ] || for d in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk" /opt/android-sdk; do [ -d "$d" ] && export ANDROID_HOME="$d" && break; done
+```
+No secrets step is needed: `androidApp/build.gradle.kts` points the secrets plugin at
+`secrets.properties` and falls back to the tracked `secrets.defaults.properties`, so the
+`google` flavor builds with neither file present. Create `secrets.properties` only if you
+want real Google Maps tiles (`MAPS_API_KEY=…`). `local.properties` is not read for secrets.
+
+**Baseline verification — run before every push** (CI has failed on skipped local checks):
+```bash
+./gradlew spotlessApply spotlessCheck detekt detektTypeResolved assembleDebug test allTests
+```
+Both `test` and `allTests` are required: `allTests` runs each KMP module's `jvmTest` and Android host tests (a KMP module has no `test` task, and naming `:core:data:test` fails as ambiguous), `test` covers pure-Android/JVM modules and skips KMP ones. Add `kmpSmokeCompile` when touching a KMP module. After adding string resources, run `python3 scripts/sort-strings.py`. Change-type matrix and CI architecture: `.skills/testing-ci/SKILL.md`.
+
+**Single test:**
+```bash
+./gradlew :feature:messaging:allTests                              # one KMP module
+./gradlew :androidApp:testFdroidDebugUnitTest                      # one Android/JVM module
+./gradlew :core:data:jvmTest --tests "*PacketHandlerTest*"         # filter to one class/method (allTests takes no --tests)
+```

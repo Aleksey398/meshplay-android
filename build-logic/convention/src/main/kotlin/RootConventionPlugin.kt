@@ -1,0 +1,175 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+import org.gradle.api.Plugin
+import org.gradle.api.Project
+import org.gradle.kotlin.dsl.apply
+import org.gradle.kotlin.dsl.register
+import org.meshtastic.buildlogic.configureDokkaAggregation
+import org.meshtastic.buildlogic.configureGraphTasks
+import org.meshtastic.buildlogic.configureKover
+import org.meshtastic.buildlogic.configureKoverAggregation
+
+/**
+ * Root convention plugin applied to the top-level project.
+ *
+ * Configures Dokka aggregation, Kover aggregation, graph tasks, and the `kmpSmokeCompile` lifecycle task. All
+ * subproject references use explicit path strings derived from `settings.gradle.kts` includes to avoid `subprojects {}`
+ * / `allprojects {}` iteration, which performs cross-project configuration access incompatible with Gradle Isolated
+ * Projects.
+ */
+class RootConventionPlugin : Plugin<Project> {
+    override fun apply(target: Project) {
+        require(target.path == ":")
+        with(target) {
+            val modules = allModules()
+
+            apply(plugin = "org.jetbrains.dokka")
+            configureDokkaAggregation(modules.filter { it !in DOKKA_EXCLUDED_MODULES })
+
+            apply(plugin = "org.jetbrains.kotlinx.kover")
+            configureKover()
+            configureKoverAggregation(modules)
+
+            // Register graph tasks on the root project itself
+            configureGraphTasks()
+            registerKmpSmokeCompileTask()
+            registerBuildLogicLintTasks()
+        }
+    }
+}
+
+/**
+ * Registers root `spotlessApply`, `spotlessCheck` and `detekt` tasks that run the included build-logic build's, which
+ * the per-module tasks those names select never reach.
+ */
+private fun Project.registerBuildLogicLintTasks() {
+    val buildLogic = gradle.includedBuild("build-logic")
+    listOf("spotlessApply", "spotlessCheck", "detekt").forEach { name ->
+        tasks.register(name) {
+            group = "verification"
+            description = "Runs $name on the included build-logic build."
+            dependsOn(buildLogic.task(":convention:$name"))
+        }
+    }
+}
+
+/**
+ * Registers a `kmpSmokeCompile` lifecycle task that depends on the common metadata, JVM, iOS Simulator ARM64 and iOS
+ * test compiles of all KMP modules, plus `assembleAndroidDeviceTest` for [DEVICE_TEST_MODULES], by task path.
+ *
+ * Non-KMP modules simply won't have these tasks, so the path-based dependencies will be silently ignored.
+ */
+private fun Project.registerKmpSmokeCompileTask() {
+    val kmp = kmpModules()
+    tasks.register("kmpSmokeCompile") {
+        group = "verification"
+        description = "Compile all KMP modules' common metadata, JVM, iOS and iOS tests, and assemble device-test APKs."
+
+        kmp.forEach { path ->
+            // Dokka and the IDE compile commonMain alone, where platform-only APIs (okio's FileSystem.SYSTEM,
+            // MatchGroup.range) don't resolve even though every target compiles.
+            dependsOn("$path:compileCommonMainKotlinMetadata")
+            dependsOn("$path:compileKotlinJvm")
+            dependsOn("$path:compileKotlinIosSimulatorArm64")
+            // Kotlin/Native rejects backtick test names that JVM accepts, so commonTest also compiles for iOS.
+            dependsOn("$path:compileTestKotlinIosSimulatorArm64")
+        }
+
+        // Assemble, not just compile, the androidDeviceTest APKs: dexing and packaging failures only show up there.
+        // Running them still needs a device.
+        DEVICE_TEST_MODULES.forEach { path -> dependsOn("$path:assembleAndroidDeviceTest") }
+    }
+}
+
+/** KMP modules that declare `withDeviceTest {}` and therefore have `assembleAndroidDeviceTest` tasks. */
+private val DEVICE_TEST_MODULES = listOf(":core:database", ":core:model")
+
+/**
+ * Modules that participate in root aggregation (Dokka, Kover) and `kmpSmokeCompile`.
+ *
+ * Hand-maintained rather than derived, because `subprojects {}` iteration is incompatible with Isolated Projects.
+ * `scripts/check-module-list.py`, run by the `check-changes` job in `pull-request.yml`, fails the PR when this drifts
+ * from `settings.gradle.kts`, so a new module cannot silently fall out of the gate.
+ */
+private val ALL_MODULES_FULL =
+    listOf(
+        ":androidApp",
+        ":core:barcode",
+        ":core:ble",
+        ":core:common",
+        ":core:data",
+        ":core:database",
+        ":core:datastore",
+        ":core:di",
+        ":core:domain",
+        ":core:model",
+        ":core:navigation",
+        ":core:network",
+        ":core:nfc",
+        ":core:prefs",
+        ":core:repository",
+        ":core:service",
+        ":core:resources",
+        ":core:takserver",
+        ":core:testing",
+        ":core:ui",
+        ":feature:intro",
+        ":feature:messaging",
+        ":feature:connections",
+        ":feature:coverage",
+        ":feature:discovery",
+        ":feature:docs",
+        ":feature:map",
+        ":feature:map-maplibre",
+        ":feature:map-terrain",
+        ":feature:node",
+        ":feature:settings",
+        ":feature:firmware",
+        ":feature:wifi-provision",
+        ":feature:widget",
+        ":desktopApp",
+    )
+
+/** Android-only modules that don't apply the KMP plugin. */
+private val ANDROID_ONLY_MODULES = setOf(":androidApp", ":core:barcode", ":core:nfc", ":feature:widget")
+
+/**
+ * Modules excluded from Dokka aggregation.
+ *
+ * These are test harnesses and build-time generators with no API surface a reader would look up: they exist to run
+ * checks or emit artifacts, not to be called from other modules. Aggregating them only added generation time and empty
+ * pages to the published `/api/` reference.
+ *
+ * `:core:testing` is deliberately NOT excluded. It is a shared fixture library that other modules' tests consume, so
+ * its API docs are useful to contributors writing tests.
+ */
+private val DOKKA_EXCLUDED_MODULES =
+    setOf(
+        ":core:konsist", // Konsist architecture assertions; single test class, no callable API
+        ":screenshot-tests", // Paparazzi/Roborazzi harness for the screenshot gate
+        ":docs-screenshots", // generate-only module that emits documentation screenshots
+        ":baselineprofile", // macrobenchmark module that generates baseline-prof.txt
+        ":store-screenshots", // instrumented module that captures the store-listing screenshots
+    )
+
+private fun allModules(): List<String> = ALL_MODULES_FULL
+
+/**
+ * Modules that apply the KMP plugin and should be compiled for JVM and `iosSimulatorArm64`. Excludes pure-Android
+ * modules (:androidApp, :core:barcode, :core:nfc, :feature:widget) and the desktop JVM-only module.
+ */
+private fun kmpModules(): List<String> = allModules().filter { it !in ANDROID_ONLY_MODULES + ":desktopApp" }

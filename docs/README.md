@@ -1,0 +1,101 @@
+# Documentation Structure
+
+This directory contains the source documentation for the Meshtastic Android and Desktop app.
+It serves three consumers:
+
+1. **In-app docs browser** — bundled via Compose Resources at build time
+2. **Jekyll site** — GitHub Pages (this directory is the Jekyll source root)
+3. **meshtastic.org** — Docusaurus sync (upstream consumption)
+
+## Locale Layout
+
+```text
+docs/
+├── _config.yml, _data/, _includes/, _layouts/, _sass/   ← Jekyll site infrastructure
+├── assets/screenshots/                       ← Screenshots shared by every consumer
+├── en/                                       ← English source (edit here)
+│   ├── user/                                 ← User Guide pages
+│   ├── developer/                            ← Developer Guide pages (English only)
+│   ├── index.md                              ← Site home page
+│   ├── user.md                               ← User Guide nav parent
+│   └── developer.md                          ← Developer Guide nav parent
+├── fr/                                       ← French (Crowdin-generated)
+│   ├── index.md                              ← Translated home page
+│   └── user/                                 ← Translated user guide
+├── de/                                       ← German (Crowdin-generated)
+│   ├── index.md
+│   └── user/
+└── ...                                       ← Other locales
+```
+
+## Editing Guidelines
+
+- **How to write**: Section 11 of the
+  [Meshtastic Client Design Standards](https://github.com/meshtastic/design/tree/master/standards)
+  is the style guide for everything under `docs/en/` — voice, terminology, page
+  structure, code examples, media and accessibility. Read it first.
+  [Documentation Style](en/developer/documentation-style.md) carries what is
+  specific to this repository, including the admonition form, and defers to
+  Section 11 everywhere else. The rules below are mechanics, not style.
+- **English source**: Edit files under `docs/en/`. These are the authoritative source.
+- **Translations**: Do **not** edit files in locale folders directly. They are auto-generated
+  by [Crowdin](https://crowdin.com/project/meshtastic-android) and will be overwritten on sync.
+  Contribute translations via Crowdin instead.
+- **Adding a page**: Create the `.md` file in `docs/en/user/` or `docs/en/developer/`, then
+  register it in `feature/docs/.../DocBundleLoader.kt` for in-app bundling. The `docs-quality.yml`
+  workflow fails a pull request when a page and the loader disagree.
+
+## How Translations Work
+
+1. English source files (`docs/en/user/*.md` and `docs/en/index.md`) are uploaded to Crowdin as translation
+   sources; the developer guide stays English-only
+2. Volunteers translate via the Crowdin web UI
+3. Crowdin PRs land translated files at `docs/{locale}/user/*.md` and `docs/{locale}/index.md`, named like
+   the app's `values-*` directories (`fr`, `pt-rBR`, `b+sr+Latn`)
+4. At build time, the Gradle `syncDocsToComposeResources` task bundles them into
+   locale-qualified Compose Resources for the in-app reader
+5. The in-app `DocBundleLoader` tries the user's locale first, then falls back to English
+
+## Publishing & Versioning
+
+The GitHub Pages site is published to the persistent `gh-pages` branch as parallel
+channels (GitHub Pages must be configured to serve from that branch):
+
+| Path | Content | Published by |
+|------|---------|--------------|
+| `/` | Latest production release (default landing) | `docs-release.yml` on `vX.Y.Z` tags, dispatched by `promote.yml` |
+| `/vX.Y.Z/` | Copy of the current and the previous production release | `docs-release.yml` on `vX.Y.Z` tags, dispatched by `promote.yml` |
+| `/vX.Y.Z-open.N/` | Per-tag open-testing snapshot | `docs-release.yml` on `vX.Y.Z-open.N` tags, dispatched by `promote.yml` |
+| `/vX.Y.Z-closed.N/` | Per-tag closed-testing snapshot | `docs-release.yml` on `vX.Y.Z-closed.N` tags, dispatched by `promote.yml` |
+| `/main/` | Snapshot of the `main` branch | `docs-deploy.yml` on pushes to `main` that touch the site |
+| `/api/` | Dokka API reference | `docs-deploy.yml` daily, plus production releases |
+| `/versions.json` | Version manifest for the site's version switcher | regenerated on every deploy |
+
+`promote.yml` dispatches `docs-release.yml` after every open, closed and
+production promotion, because the tag it creates with `GITHUB_TOKEN` starts no
+workflow. The tag trigger of `docs-release.yml` covers a tag pushed by hand.
+
+`-internal.N` tags are deliberately not published — they are cut many times per
+cycle and are not a documented channel.
+
+Prerelease snapshots accumulate during a version cycle so testers can read the
+docs for the exact build they are running. Once the production `vX.Y.Z` tag
+ships, `/vX.Y.Z/` supersedes them, and once it is published Docs Release
+dispatches **Post-Release Cleanup**, which reaps every open and closed directory
+and prerelease tag at or below `X.Y.Z`. It also keeps two production copies,
+`/vX.Y.Z/` and the newest one below it, and removes every older one. Copies above
+`X.Y.Z` are left alone, so a backfill never removes newer docs. A manual dispatch
+defaults to a dry run.
+
+Only production releases own `/` and rebuild `/api/`. Prerelease tags publish
+their own directory only, since `/api/` is unversioned and `docs-deploy.yml`
+rebuilds it from `main` every day. Until a production release exists, `/` redirects to the
+best available channel — newest open, then newest closed, then `/main/` — and
+upgrades automatically as better channels appear. Real release content at the
+root is never overwritten by that fallback.
+
+Each deploy overlays only its own channels via `scripts/docs/publish-to-gh-pages.sh`,
+so every other channel survives the next deploy. The header
+version dropdown (`_includes/version_switcher.html`) reads `/versions.json` at runtime;
+a separate header link points to the upstream docs at meshtastic.org. To backfill a
+release, run the "Docs Release" workflow manually against the release tag.

@@ -1,0 +1,134 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.node.list
+
+import kotlinx.coroutines.flow.map
+import org.koin.core.annotation.Single
+import org.meshtastic.core.model.NodeSortOption
+import org.meshtastic.core.repository.UiPrefs
+
+@Single
+@Suppress("TooManyFunctions")
+open class NodeFilterPreferences constructor(private val uiPrefs: UiPrefs) {
+    /** Every node-list filter as one value; see [org.meshtastic.core.repository.NodeFilterPrefs]. */
+    open val filters = uiPrefs.nodeFilters
+
+    // Node list layout preferences
+    open val nodeListDensity = uiPrefs.nodeListDensity
+    open val shouldShowPower = uiPrefs.shouldShowPower
+    open val shouldShowLastHeard = uiPrefs.shouldShowLastHeard
+    open val lastHeardIsRelative = uiPrefs.lastHeardIsRelative
+    open val shouldShowLocation = uiPrefs.shouldShowLocation
+    open val shouldShowHops = uiPrefs.shouldShowHops
+    open val shouldShowSignal = uiPrefs.shouldShowSignal
+    open val shouldShowChannel = uiPrefs.shouldShowChannel
+    open val shouldShowRole = uiPrefs.shouldShowRole
+    open val shouldShowTelemetry = uiPrefs.shouldShowTelemetry
+
+    open val keptUnheardNodes = uiPrefs.keptUnheardNodes
+
+    open fun keepUnheardNodes(nodeNums: Set<Int>) {
+        uiPrefs.keepUnheardNodes(nodeNums)
+    }
+
+    open fun forgetKeptUnheardNodes(nodeNums: Set<Int>) {
+        uiPrefs.forgetKeptUnheardNodes(nodeNums)
+    }
+
+    open val nodeSortOption =
+        uiPrefs.nodeSort.map { NodeSortOption.entries.getOrElse(it) { NodeSortOption.VIA_FAVORITE } }
+
+    open fun setNodeSort(option: NodeSortOption) {
+        uiPrefs.setNodeSort(option.ordinal)
+    }
+
+    open fun setNodeListDensity(value: String) {
+        uiPrefs.setNodeListDensity(value)
+    }
+
+    open fun setShouldShowPower(value: Boolean) {
+        uiPrefs.setShouldShowPower(value)
+    }
+
+    open fun setShouldShowLastHeard(value: Boolean) {
+        uiPrefs.setShouldShowLastHeard(value)
+    }
+
+    open fun setLastHeardIsRelative(value: Boolean) {
+        uiPrefs.setLastHeardIsRelative(value)
+    }
+
+    open fun setShouldShowLocation(value: Boolean) {
+        uiPrefs.setShouldShowLocation(value)
+    }
+
+    open fun setShouldShowHops(value: Boolean) {
+        uiPrefs.setShouldShowHops(value)
+    }
+
+    open fun setShouldShowSignal(value: Boolean) {
+        uiPrefs.setShouldShowSignal(value)
+    }
+
+    open fun setShouldShowChannel(value: Boolean) {
+        uiPrefs.setShouldShowChannel(value)
+    }
+
+    open fun setShouldShowRole(value: Boolean) {
+        uiPrefs.setShouldShowRole(value)
+    }
+
+    open fun setShouldShowTelemetry(value: Boolean) {
+        uiPrefs.setShouldShowTelemetry(value)
+    }
+
+    open fun toggleIncludeUnknown() {
+        uiPrefs.updateNodeFilters { it.copy(includeUnknown = !it.includeUnknown) }
+    }
+
+    open fun toggleExcludeInfrastructure() {
+        uiPrefs.updateNodeFilters { it.copy(excludeInfrastructure = !it.excludeInfrastructure) }
+    }
+
+    open fun toggleOnlyOnline() {
+        uiPrefs.updateNodeFilters { it.copy(onlyOnline = !it.onlyOnline) }
+    }
+
+    open fun toggleOnlyDirect() {
+        uiPrefs.updateNodeFilters { it.copy(onlyDirect = !it.onlyDirect) }
+    }
+
+    open fun toggleShowIgnored() {
+        uiPrefs.updateNodeFilters { it.copy(showIgnored = !it.showIgnored) }
+    }
+
+    open fun toggleOnlySigned() {
+        uiPrefs.updateNodeFilters { it.copy(onlySigned = !it.onlySigned) }
+    }
+
+    open fun toggleOnlyEncrypted() {
+        uiPrefs.updateNodeFilters { it.copy(onlyEncrypted = !it.onlyEncrypted) }
+    }
+
+    open fun toggleExcludeMqtt() {
+        uiPrefs.updateNodeFilters { it.copy(excludeMqtt = !it.excludeMqtt) }
+    }
+
+    open fun toggleExcludeUnheard() {
+        uiPrefs.updateNodeFilters { it.copy(excludeUnheard = !it.excludeUnheard) }
+    }
+}

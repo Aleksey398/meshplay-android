@@ -1,0 +1,265 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.domain.usecase.settings
+
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.float
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import okio.Buffer
+import okio.ByteString.Companion.encodeUtf8
+import org.meshtastic.core.model.Node
+import org.meshtastic.core.testing.FakeNodeRepository
+import org.meshtastic.core.testing.TestDataFactory
+import org.meshtastic.proto.AirQualityMetrics
+import org.meshtastic.proto.DeviceMetrics
+import org.meshtastic.proto.EnvironmentMetrics
+import org.meshtastic.proto.HardwareModel
+import org.meshtastic.proto.Position
+import org.meshtastic.proto.SoilWaterMetrics
+import org.meshtastic.proto.User
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class ExportNodeDatabaseUseCaseTest {
+
+    private lateinit var nodeRepository: FakeNodeRepository
+    private lateinit var useCase: ExportNodeDatabaseUseCase
+
+    @BeforeTest
+    fun setUp() {
+        nodeRepository = FakeNodeRepository()
+        useCase = ExportNodeDatabaseUseCase(nodeRepository)
+    }
+
+    private suspend fun exportJson(): JsonObject {
+        val buffer = Buffer()
+        useCase(buffer)
+        return Json.parseToJsonElement(buffer.readUtf8()).jsonObject
+    }
+
+    @Test
+    fun `empty database exports a valid document`() = runTest {
+        val root = exportJson()
+
+        assertEquals(1, root["schemaVersion"]?.jsonPrimitive?.int)
+        assertTrue(root["exportedAt"]?.jsonPrimitive?.content.orEmpty().isNotEmpty())
+        assertNull(root["myNodeNum"])
+        assertEquals(0, root["nodes"]?.jsonArray?.size)
+    }
+
+    @Test
+    fun `absent readings are omitted rather than exported as sentinels`() = runTest {
+        // A bare node: snr/rssi hold their unset sentinels, lastHeard is 0, and no metrics were ever received.
+        nodeRepository.setNodes(listOf(Node(num = 42)))
+
+        val node = exportJson()["nodes"]!!.jsonArray.single().jsonObject
+
+        assertEquals(42, node["num"]?.jsonPrimitive?.int)
+        assertFalse("snr" in node)
+        assertFalse("rssi" in node)
+        assertFalse("lastHeard" in node)
+        assertFalse("position" in node)
+        assertFalse("deviceMetrics" in node)
+        assertFalse("environmentMetrics" in node)
+        assertFalse("airQualityMetrics" in node)
+        assertFalse("soilWaterMetrics" in node)
+        assertFalse("publicKey" in node)
+    }
+
+    @Test
+    fun `the export carries the broadcast name and never the local display name`() = runTest {
+        nodeRepository.setNodes(
+            listOf(
+                Node(
+                    num = 5,
+                    user = User.Builder().also { wb -> wb.long_name = "Broadcast" }.build(),
+                    displayName = "Secret",
+                ),
+            ),
+        )
+
+        val buffer = Buffer()
+        useCase(buffer)
+        val text = buffer.readUtf8()
+
+        assertTrue("Broadcast" in text)
+        assertFalse("Secret" in text)
+    }
+
+    @Test
+    fun `lightning readings export from environment metrics`() = runTest {
+        val env =
+            EnvironmentMetrics.Builder()
+                .also { wb ->
+                    wb.lightning_strike_count_1h = 0
+                    wb.lightning_distance_km = 12f
+                }
+                .build()
+        nodeRepository.setNodes(listOf(Node(num = 7, environmentMetrics = env)))
+
+        val metrics = exportJson()["nodes"]!!.jsonArray.single().jsonObject["environmentMetrics"]!!.jsonObject
+
+        // A quiet hour is 0 strikes, a reading in its own right - it must not be dropped as absent.
+        assertEquals(0, metrics["lightningStrikeCount1h"]?.jsonPrimitive?.int)
+        assertEquals(12f, metrics["lightningDistanceKm"]?.jsonPrimitive?.float)
+        assertFalse("temperature" in metrics)
+    }
+
+    @Test
+    fun `pm status flags export raw and survive at zero`() = runTest {
+        val aq =
+            AirQualityMetrics.Builder()
+                .also { wb ->
+                    wb.pm25_standard = 9
+                    wb.pm_status_flags = 0
+                }
+                .build()
+        nodeRepository.setNodes(listOf(Node(num = 7, airQualityMetrics = aq)))
+
+        val metrics = exportJson()["nodes"]!!.jsonArray.single().jsonObject["airQualityMetrics"]!!.jsonObject
+
+        // A status register at 0 means "no faults", which is a reading, not absence.
+        assertEquals(0, metrics["pmStatusFlags"]?.jsonPrimitive?.int)
+        assertEquals(9, metrics["pm25Standard"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `soil water metrics export with absent fields omitted`() = runTest {
+        val soil =
+            SoilWaterMetrics.Builder()
+                .also { wb ->
+                    wb.soil_ph = 6.5f
+                    wb.electrical_conductivity = 1.2f
+                    wb.nitrogen = 0f
+                }
+                .build()
+        nodeRepository.setNodes(listOf(Node(num = 7, soilWaterMetrics = soil)))
+
+        val metrics = exportJson()["nodes"]!!.jsonArray.single().jsonObject["soilWaterMetrics"]!!.jsonObject
+
+        assertEquals(6.5f, metrics["soilPh"]?.jsonPrimitive?.float)
+        assertEquals(1.2f, metrics["electricalConductivity"]?.jsonPrimitive?.float)
+        assertEquals(0f, metrics["nitrogen"]?.jsonPrimitive?.float)
+        assertFalse("phosphorus" in metrics)
+        assertFalse("ph" in metrics)
+    }
+
+    @Test
+    fun `zero readings are real and survive the export`() = runTest {
+        // 0 dB SNR and 0 dBm RSSI are genuine measurements, not absence.
+        nodeRepository.setNodes(listOf(Node(num = 7, snr = 0f, rssi = 0, lastHeard = 1700000000)))
+
+        val node = exportJson()["nodes"]!!.jsonArray.single().jsonObject
+
+        assertEquals(0f, node["snr"]?.jsonPrimitive?.float)
+        assertEquals(0, node["rssi"]?.jsonPrimitive?.int)
+        assertEquals(1700000000L, node["lastHeard"]?.jsonPrimitive?.long)
+    }
+
+    @Test
+    fun `node fields map through user position metrics and key`() = runTest {
+        val key = "0123456789abcdef0123456789abcdef".encodeUtf8()
+        val node =
+            Node(
+                num = 7,
+                user =
+                User.Builder()
+                    .also { wb ->
+                        wb.id = "!00000007"
+                        wb.long_name = "Base Camp"
+                        wb.short_name = "BASE"
+                        wb.hw_model = HardwareModel.TBEAM
+                    }
+                    .build(),
+                position =
+                Position.Builder()
+                    .also { wb ->
+                        wb.latitude_i = 450000000
+                        wb.longitude_i = -930000000
+                    }
+                    .build(),
+                deviceMetrics =
+                DeviceMetrics.Builder()
+                    .also { wb ->
+                        wb.battery_level = 85
+                        wb.voltage = 3.9f
+                    }
+                    .build(),
+                publicKey = key,
+                isFavorite = true,
+                viaMqtt = true,
+                hopsAway = 2,
+                notes = "solar repeater",
+            )
+        nodeRepository.setNodes(listOf(node))
+
+        val exported = exportJson()["nodes"]!!.jsonArray.single().jsonObject
+
+        assertEquals("!00000007", exported["id"]?.jsonPrimitive?.content)
+        assertEquals("Base Camp", exported["longName"]?.jsonPrimitive?.content)
+        assertEquals("BASE", exported["shortName"]?.jsonPrimitive?.content)
+        assertEquals("TBEAM", exported["hwModel"]?.jsonPrimitive?.content)
+        assertEquals(key.base64(), exported["publicKey"]?.jsonPrimitive?.content)
+        assertTrue(exported["isFavorite"]?.jsonPrimitive?.boolean == true)
+        assertTrue(exported["viaMqtt"]?.jsonPrimitive?.boolean == true)
+        assertEquals(2, exported["hopsAway"]?.jsonPrimitive?.int)
+        assertEquals("solar repeater", exported["notes"]?.jsonPrimitive?.content)
+
+        val position = exported["position"]!!.jsonObject
+        assertEquals(45.0, position["latitude"]!!.jsonPrimitive.double, absoluteTolerance = 1e-6)
+        assertEquals(-93.0, position["longitude"]!!.jsonPrimitive.double, absoluteTolerance = 1e-6)
+
+        val metrics = exported["deviceMetrics"]!!.jsonObject
+        assertEquals(85, metrics["batteryLevel"]?.jsonPrimitive?.int)
+        assertEquals(3.9f, metrics["voltage"]?.jsonPrimitive?.float)
+    }
+
+    @Test
+    fun `node numbers export as unsigned`() = runTest {
+        nodeRepository.setMyNodeInfo(TestDataFactory.createMyNodeInfo(myNodeNum = -2))
+        nodeRepository.setNodes(listOf(Node(num = -1)))
+
+        val root = exportJson()
+
+        assertEquals(4294967294L, root["myNodeNum"]?.jsonPrimitive?.long)
+        val node = root["nodes"]!!.jsonArray.single().jsonObject
+        assertEquals(4294967295L, node["num"]?.jsonPrimitive?.long)
+    }
+
+    @Test
+    fun `nodes are sorted most recently heard first`() = runTest {
+        nodeRepository.setNodes(
+            listOf(Node(num = 1, lastHeard = 100), Node(num = 2, lastHeard = 300), Node(num = 3, lastHeard = 200)),
+        )
+
+        val nums = exportJson()["nodes"]!!.jsonArray.map { it.jsonObject["num"]?.jsonPrimitive?.int }
+
+        assertEquals(listOf(2, 3, 1), nums)
+    }
+}

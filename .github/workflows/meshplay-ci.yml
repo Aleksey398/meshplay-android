@@ -1,0 +1,198 @@
+# Modified by MeshPlay on 2026-10-30
+name: MeshPlay CI
+
+on:
+  push:
+    branches: [ main, 'arena/**' ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      release_dry_run:
+        description: 'Build, sign and verify release APKs without publishing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meshplay-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  # Debug build + game-layer unit tests on every branch push / PR. The fdroid flavor needs no
+  # Google Maps / Firebase / Datadog keys, so this runs on a stock ubuntu runner.
+  build-debug:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !(github.event_name == 'workflow_dispatch' && inputs.release_dry_run) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Gradle
+        uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'false'
+
+      - name: Game layer unit tests
+        run: |
+          set +e
+          ./gradlew :core:game-protocol:jvmTest :feature:games:jvmTest --console=plain 2>&1 | tee unit-tests.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "^e: |error:|FAILURE:|What went wrong|Could not |Unresolved reference|> .*FAILED" unit-tests.log | head -60 | sed 's/^/::error::/' || true
+            grep -A4 "> .*FAILED" unit-tests.log | grep -E "Error|expected|actual|at org\.meshplay|Caused by" | head -40 | sed 's/^/::error::/' || true
+          fi
+          exit "$status"
+
+      - name: Assemble fdroid debug APK
+        run: |
+          set +e
+          ./gradlew :androidApp:assembleFdroidDebug --console=plain 2>&1 | tee assemble.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "^e: |error:|FAILURE:|What went wrong|Could not |Unresolved reference|> .*FAILED" assemble.log | head -60 | sed 's/^/::error::/' || true
+            grep -A4 "> .*FAILED" assemble.log | grep -E "Error|expected|actual|at org\.meshplay|Caused by" | head -40 | sed 's/^/::error::/' || true
+          fi
+          exit "$status"
+
+      - name: Report debug APK
+        run: |
+          {
+            echo "## Debug APK"
+            echo
+            echo "Download the artifact below to get the file(s):"
+            echo
+            ls -lh androidApp/build/outputs/apk/fdroid/debug/*.apk | awk '{print "- `" $9 "` (" $5 ")"}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeshPlay-debug-APK
+          path: androidApp/build/outputs/apk/fdroid/debug/*.apk
+          if-no-files-found: error
+
+  # Tagged release: assemble fdroidRelease, sign it (private KEYSTORE_* secrets when set, else the
+  # repository fallback keystore), verify the signature with apksigner, and attach the signed
+  # APKs plus SHA256SUMS.txt to a GitHub Release. Unsigned APKs are never published — Android
+  # refuses to install them ("package is invalid"). workflow_dispatch + release_dry_run runs the
+  # whole build/sign/verify pipeline without cutting a release.
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_dry_run) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Gradle
+        uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'false'
+
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > keystore.p12
+            STORE_PASSWORD="$KEYSTORE_PASSWORD"
+            ALIAS="$KEY_ALIAS"
+            KEY_PW="$KEY_PASSWORD"
+            echo "::notice::Signing with the private KEYSTORE_* secrets."
+          elif [ -f .github/signing/meshplay-release.p12 ]; then
+            cp .github/signing/meshplay-release.p12 keystore.p12
+            STORE_PASSWORD="meshplay-release-2026"
+            ALIAS="meshplay-release"
+            KEY_PW="meshplay-release-2026"
+            echo "::warning::Using the repository fallback release keystore (public in git). Add KEYSTORE_* secrets to rotate to a private key."
+          else
+            echo "::error::No release keystore available; refusing to build an un-installable APK."
+            exit 1
+          fi
+          {
+            echo "storeFile=$PWD/keystore.p12"
+            echo "storeType=PKCS12"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$ALIAS"
+            echo "keyPassword=$KEY_PW"
+          } > keystore.properties
+
+      - name: Game layer unit tests
+        run: ./gradlew :core:game-protocol:jvmTest :feature:games:jvmTest --console=plain
+
+      - name: Assemble fdroid release APK
+        run: ./gradlew :androidApp:assembleFdroidRelease
+
+      - name: Verify APK signatures
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          echo "Using $apksigner"
+          count=0
+          for apk in androidApp/build/outputs/apk/fdroid/release/*.apk; do
+            case "$apk" in
+              *-unsigned.apk)
+                echo "::error::Unsigned APK produced ($apk) — Android cannot install it."
+                exit 1
+                ;;
+            esac
+            {
+              echo "### $(basename "$apk")"
+              echo '```'
+              "$apksigner" verify --verbose --print-certs "$apk"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            "$apksigner" verify --verbose "$apk" > /dev/null
+            count=$((count + 1))
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No release APK found under androidApp/build/outputs/apk/fdroid/release/."
+            exit 1
+          fi
+          echo "$count APK(s) verified."
+
+      - name: Generate checksums and release notes
+        run: |
+          set -euo pipefail
+          cd androidApp/build/outputs/apk/fdroid/release
+          sha256sum *.apk > SHA256SUMS.txt
+          cp SHA256SUMS.txt "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          {
+            echo "## MeshPlay ${GITHUB_REF_NAME}"
+            echo
+            echo "**Install**: uninstall any previously installed MeshPlay (or old Meshtastic) build first —"
+            echo "sideloaded APKs with different signing keys cannot upgrade each other, and Android will"
+            echo "just say the app is not installed. Then install the APK for your SoC:"
+            echo "\`*-arm64-v8a-release.apk\` for almost every modern phone, or the universal build if unsure."
+            echo "The APKs are signed with the MeshPlay release key and pass \`apksigner verify\`."
+            echo
+            echo "### SHA-256"
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+          } > "$GITHUB_WORKSPACE/RELEASE_NOTES.md"
+
+      # Publish the signed APKs as separate downloadable files on the release; never publish a
+      # release that has no APK attached.
+      - name: Publish GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            androidApp/build/outputs/apk/fdroid/release/*.apk
+            SHA256SUMS.txt
+          fail_on_unmatched_files: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: true

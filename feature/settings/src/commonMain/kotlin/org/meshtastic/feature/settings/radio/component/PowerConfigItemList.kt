@@ -1,0 +1,181 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.adc_multiplier_override
+import org.meshtastic.core.resources.battery_ina_2xx_i2c_address
+import org.meshtastic.core.resources.minimum_wake_time_seconds
+import org.meshtastic.core.resources.power
+import org.meshtastic.core.resources.power_config
+import org.meshtastic.core.resources.schema_power_adc_multiplier_override
+import org.meshtastic.core.resources.schema_power_is_power_saving
+import org.meshtastic.core.resources.schema_power_is_power_saving_description
+import org.meshtastic.core.resources.schema_power_on_battery_shutdown_after_secs
+import org.meshtastic.core.resources.schema_power_on_battery_shutdown_after_secs_description
+import org.meshtastic.core.resources.schema_power_wait_bluetooth_secs
+import org.meshtastic.core.resources.super_deep_sleep_duration_seconds
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ConfigRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.IntervalConfiguration
+import org.meshtastic.feature.settings.util.toDisplayString
+import org.meshtastic.proto.Config
+
+@Composable
+fun PowerConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val powerConfig = state.radioConfig.power ?: Config.PowerConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = powerConfig)
+    val focusManager = LocalFocusManager.current
+
+    RadioConfigScreenList(
+        title = stringResource(Res.string.power),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = Config.Builder().also { wb -> wb.power = it }.build()
+            viewModel.setConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ConfigRoute.POWER.route)) {
+            TitledCard(title = stringResource(Res.string.power_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_power_is_power_saving),
+                    modifier = Modifier.settingsField(Res.string.schema_power_is_power_saving),
+                    summary = stringResource(Res.string.schema_power_is_power_saving_description),
+                    checked = formState.value.is_power_saving,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.is_power_saving = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                val items = remember { IntervalConfiguration.ALL.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_power_on_battery_shutdown_after_secs),
+                    modifier = Modifier.settingsField(Res.string.schema_power_on_battery_shutdown_after_secs),
+                    summary = stringResource(Res.string.schema_power_on_battery_shutdown_after_secs_description),
+                    selectedItem = formState.value.on_battery_shutdown_after_secs.toLong(),
+                    enabled = state.connected,
+                    items = items.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value
+                                .newBuilder()
+                                .also { wb -> wb.on_battery_shutdown_after_secs = it.toInt() }
+                                .build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.adc_multiplier_override),
+                    checked = formState.value.adc_multiplier_override > 0f,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value
+                                .newBuilder()
+                                .also { wb -> wb.adc_multiplier_override = if (it) 1.0f else 0.0f }
+                                .build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                if (formState.value.adc_multiplier_override > 0f) {
+                    HorizontalDivider()
+                    EditTextPreference(
+                        title = stringResource(Res.string.schema_power_adc_multiplier_override),
+                        modifier = Modifier.settingsField(Res.string.schema_power_adc_multiplier_override),
+                        value = formState.value.adc_multiplier_override,
+                        enabled = state.connected,
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        onValueChanged = {
+                            formState.value =
+                                formState.value.newBuilder().also { wb -> wb.adc_multiplier_override = it }.build()
+                        },
+                    )
+                }
+                HorizontalDivider()
+                val waitBluetoothItems = remember { IntervalConfiguration.NAG_TIMEOUT.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_power_wait_bluetooth_secs),
+                    modifier = Modifier.settingsField(Res.string.schema_power_wait_bluetooth_secs),
+                    selectedItem = formState.value.wait_bluetooth_secs.toLong(),
+                    enabled = state.connected,
+                    items = waitBluetoothItems.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.wait_bluetooth_secs = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                val sdsSecsItems = remember { IntervalConfiguration.ALL.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.super_deep_sleep_duration_seconds),
+                    selectedItem = formState.value.sds_secs.toLong(),
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.sds_secs = it.toInt() }.build()
+                    },
+                    enabled = state.connected,
+                    items = sdsSecsItems.map { it.value to it.toDisplayString() },
+                )
+                HorizontalDivider()
+                val minWakeItems = remember { IntervalConfiguration.NAG_TIMEOUT.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.minimum_wake_time_seconds),
+                    selectedItem = formState.value.min_wake_secs.toLong(),
+                    enabled = state.connected,
+                    items = minWakeItems.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.min_wake_secs = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.battery_ina_2xx_i2c_address),
+                    value = formState.value.device_battery_ina_address,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.device_battery_ina_address = it }.build()
+                    },
+                )
+            }
+        }
+    }
+}

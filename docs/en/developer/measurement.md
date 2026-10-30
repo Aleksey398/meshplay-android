@@ -1,0 +1,207 @@
+---
+title: Measurement & Formatting
+parent: Developer Guide
+nav_order: 9
+last_updated: 2026-10-21
+description: How MetricFormatter and NumberFormatter format measurements, and how the app resolves metric or imperial units from locale and user preference.
+aliases:
+  - measurement
+  - metric-formatter
+  - number-formatter
+---
+
+# Measurement & Formatting
+
+How the Meshtastic Android/KMP app formats numbers, units, and locale-sensitive values.
+
+## Overview
+
+All measurement data transmitted by Meshtastic nodes uses **metric units** (meters, °C, hPa, m/s, etc.). The app converts and formats these values for display with these utilities:
+
+| Utility | Location | Purpose |
+|---|---|---|
+| `MetricFormatter` | `core/common/.../util/MetricFormatter.kt` | Converts and formats physical measurements (temperature, pressure, speed, etc.) |
+| `NumberFormatter` | `core/common/.../util/NumberFormatter.kt` | Decimal formatting: `format` follows the OS locale, `formatInvariant` keeps a fixed dot separator |
+| `formatMeasure` | `core/common/.../util/MeasureFormatting.kt` | Pairs a fixed English unit symbol (`MeasureUnitKind`) with a locale-formatted number, for the units that convert |
+| `toDistanceString` and siblings | `core/model/.../util/DistanceExtensions.kt` | Distance, elevation, speed and small-distance strings, rendered through CLDR where the platform can and by hand where it can't |
+
+The `core/common` utilities live in `org.meshtastic.core.common.util` and compile for every KMP target (Android, Desktop, iOS). iOS is a compile-only target: its locale formatting falls back to the invariant form.
+
+## MetricFormatter API
+
+`MetricFormatter` is a Kotlin `object` with pure functions for each measurement type:
+
+```kotlin
+object MetricFormatter {
+    fun degreeSymbol(isFahrenheit: Boolean): String
+    fun temperature(celsius: Float, isFahrenheit: Boolean): String
+    fun voltage(volts: Float, decimalPlaces: Int = 2): String
+    fun current(milliAmps: Float, decimalPlaces: Int = 1): String
+    fun percent(value: Float, decimalPlaces: Int = 1): String
+    fun percent(value: Int): String
+    fun humidity(value: Float): String
+    fun pressure(hPa: Float, decimalPlaces: Int = 1): String
+    fun snr(value: Float?, decimalPlaces: Int = 1): String
+    fun rssi(value: Int?): String
+    fun windSpeed(metersPerSecond: Float, isImperial: Boolean, decimalPlaces: Int = 1): String
+    fun rainfall(millimeters: Float, isImperial: Boolean, decimalPlaces: Int = 1): String
+    fun weight(kilograms: Float, isImperial: Boolean, decimalPlaces: Int = 2): String
+}
+```
+
+`snr` and `rssi` take a nullable reading and render the `—` placeholder when it is absent. 0 dB and 0 dBm are real readings, so they never stand in for a missing one.
+
+### Usage
+
+Output shown for an `en-US` locale:
+
+```kotlin
+// Temperature — Fahrenheit conversion is handled automatically
+MetricFormatter.temperature(22.5f, isFahrenheit = true)  // "72.5°F"
+MetricFormatter.temperature(22.5f, isFahrenheit = false)  // "22.5°C"
+
+// Signal metrics
+MetricFormatter.snr(-5.2f)    // "-5.2 dB"
+MetricFormatter.rssi(-97)     // "-97 dBm"
+
+// Environment
+MetricFormatter.pressure(1013.25f)  // "1,013.3 hPa"
+MetricFormatter.humidity(65.0f)     // "65%"
+MetricFormatter.windSpeed(3.7f, isImperial = false)  // "13.3 km/h"
+MetricFormatter.windSpeed(3.7f, isImperial = true)   // "8.3 mph"
+MetricFormatter.rainfall(12.3f, isImperial = false)  // "12.3 mm"
+MetricFormatter.rainfall(12.3f, isImperial = true)   // "0.5 in"
+
+// Power
+MetricFormatter.voltage(3.95f)      // "3.95 V"
+MetricFormatter.current(125.0f)     // "125.0 mA"
+```
+
+## NumberFormatter
+
+`NumberFormatter` has two halves, and picking the wrong one is the mistake to avoid:
+
+```kotlin
+object NumberFormatter {
+    fun format(value: Double, decimalPlaces: Int): String           // follows the OS locale
+    fun format(value: Float, decimalPlaces: Int): String            // follows the OS locale
+    fun formatInvariant(value: Double, decimalPlaces: Int): String  // fixed dot separator
+    fun formatInvariant(value: Float, decimalPlaces: Int): String   // fixed dot separator
+    fun parseDecimalOrNull(text: String): Double?                   // reads a comma or dot decimal
+}
+```
+
+**Use `format` for anything a person reads.** It delegates to the platform's own number formatter
+through an `expect`/`actual` (`java.text.NumberFormat` on JVM and Android), with the locale's decimal and
+grouping separators, so a number reads the way that user writes numbers. `NaN` and infinity render as `—`.
+
+**Use `formatInvariant` for anything a machine parses** — a CoT payload another client reads, or a
+value written out and read back. Localizing those turns `1.5` into `1,5` and breaks the reader.
+It rounds half away from zero to match the locale path, which matters because firmware reports SNR
+in quarter-dB steps and ties are routine.
+
+`parseDecimalOrNull` is the input-side counterpart: it accepts a number typed with the keyboard locale's
+decimal separator, such as `48,21`, which `String.toDoubleOrNull` rejects.
+
+## Unit conversion
+
+Four `MetricFormatter` measurements convert away from metric for display, each gated by a boolean flag that callers take from `LocaleUnitsProvider`:
+
+| Measurement | Flag | Source | Conversion |
+|---|---|---|---|
+| `temperature` | `isFahrenheit` | `LocaleUnitsProvider.temperatureUnit` | `°F = °C × 1.8 + 32` |
+| `windSpeed` | `isImperial` | `LocaleUnitsProvider.measurementSystem` | m/s × 3.6 → km/h, or × 2.23694 → mph |
+| `rainfall` | `isImperial` | `LocaleUnitsProvider.measurementSystem` | mm ÷ 25.4 → in |
+| `weight` | `isImperial` | `LocaleUnitsProvider.measurementSystem` | kg × 2.20462 → lb |
+
+The OS resolution behind those flags is two separate functions in `core/common/.../util/MeasurementSystem.kt`, `getSystemMeasurementSystem()` and `getSystemTemperatureUnit()`. They are deliberately separate: some locales mix systems (the UK uses miles for distance but Celsius for temperature), so temperature must never be derived from the distance unit. On Android, `getSystemTemperatureUnit()` delegates to `androidx.core.text.util.LocalePreferences`, which resolves CLDR locale data and honors the Android 14+ Regional preferences temperature override.
+
+The in-app **Units** choice (`UnitsOverride`, stored in `UiPrefs`) is folded in by `LocaleUnitsProvider`, which is the only place display code takes units from. A Konsist rule (`MeasurementSystemSourceTest`) keeps direct reads of the OS resolution out of the rest of the codebase, because a direct read follows the locale but ignores the setting. A forced system carries its temperature with it (metric → °C, imperial → °F), overriding even an explicit OS regional temperature preference.
+
+`getSystemMeasurementSystem()` resolves the locale in this order (temperature is separate: as described earlier, `getSystemTemperatureUnit()` reads the regional temperature preference via `LocalePreferences`, shares only the region backfill, and falls back to Celsius):
+
+1. The `ms` Unicode extension (the Android 16+ Measurement system preference) wins outright.
+2. A locale with no region — the in-app language picker offers bare tags like `en` — takes its region from the system configuration rather than letting ICU guess one from the language.
+3. Anything still unclassified falls back to metric, never imperial.
+
+The Android and Desktop implementations share the region table and the override reader in `commonMain`, so the two clients can't disagree about the same locale.
+
+Everything else `MetricFormatter` formats (voltage, current, pressure, SNR, RSSI, humidity, percent) displays in its native metric units. The user-facing [Units & Locale](../user/units-and-locale) page explains what end users see.
+
+## Distance, elevation, and speed
+
+Lengths and speeds go through the extension functions in `core/model/.../util/DistanceExtensions.kt`, which take the `MeasurementSystem` from `LocaleUnitsProvider`:
+
+| Function | Renders |
+|---|---|
+| `Int.toDistanceString` | A distance in meters, as m or km, or ft or mi, by magnitude |
+| `Int.toElevationString` | An altitude in whole meters or feet at any magnitude |
+| `Float.toSpeedString` | A speed in m/s, as km/h or mph |
+| `Float.toSmallDistanceString` | Millimeters, as mm or inches |
+| `Float.toStormDistanceString` | Whole kilometers, or miles to one decimal |
+
+Each first asks the `expect` functions in `LocalizedUnitFormatting.kt` (`formatLengthLocalized`, `formatElevationLocalized`, `formatSpeedLocalized`, `formatRainfallLocalized`), which render through the platform's ICU data with CLDR's digits, symbol, and spacing. They return null where the platform can't answer: on Desktop and iOS, on Android versions without the ICU API they need, and for a non-finite value. The caller then renders its own fallback through `formatMeasure`. None of them uses CLDR's `road` usage, whose rounding would show a node 87 m away as 90 m.
+
+## Adding a new measurement type
+
+To add a new measurement formatter:
+
+1. **Add a function to `MetricFormatter`** in `core/common/src/commonMain/kotlin/org/meshtastic/core/common/util/MetricFormatter.kt`. Take the value in the unit the node sends; the protobuf `EnvironmentMetrics.radiation` field, for example, is µR/h:
+
+   ```kotlin
+   fun radiation(microRoentgensPerHour: Float, decimalPlaces: Int = 2): String =
+       "${NumberFormatter.format(microRoentgensPerHour, decimalPlaces)} µR/h"
+   ```
+
+2. **Add tests** in `core/common/src/commonTest/`:
+
+   ```kotlin
+   @Test
+   fun radiationFormatting() {
+       assertEquals("0.15 µR/h", MetricFormatter.radiation(0.15f))
+       assertEquals("1.23 µR/h", MetricFormatter.radiation(1.234f))
+   }
+   ```
+
+3. **Use in UI** — call from any `commonMain` composable or ViewModel:
+
+   ```kotlin
+   envMetrics.radiation?.let { Text(text = MetricFormatter.radiation(it)) }
+   ```
+
+4. **Run verification**:
+
+   ```shell
+   ./gradlew :core:common:allTests
+   ```
+
+## DateFormatter
+
+Date and time formatting uses the `DateFormatter` `expect object` with platform-specific `actual` implementations. The Android formats, all in the device locale:
+
+| Function | Format |
+|---|---|
+| `formatRelativeTime()` | Abbreviated relative time to the minute, from `DateUtils.getRelativeTimeSpanString` |
+| `formatDateTime()` | Date and time with abbreviated month, from `DateUtils.formatDateTime` |
+| `formatShortDate()` | Short time within the last 24 hours, short date otherwise |
+| `formatTime()` | Short time |
+| `formatTimeWithSeconds()` | Medium time, with seconds |
+| `formatDate()` | Short date |
+| `formatDateTimeShort()` | Short date and medium time |
+
+Unlike `MetricFormatter`, `DateFormatter` is declared with `expect`/`actual` (an `expect object` in `commonMain`, an `actual object` per platform) because date formatting inherently depends on platform locale APIs. Desktop uses `java.time` formatters; the iOS stub returns empty strings.
+
+## Design decisions
+
+| Decision | Rationale |
+|---|---|
+| Display formatting follows the OS locale | A number shown to a user should read the way that user writes numbers |
+| `formatInvariant` keeps a fixed `.` for machine-read values | Interop payloads and re-parsed values break if localized |
+| `MetricFormatter` converts only temperature, wind speed, rainfall and weight; lengths and speeds convert in `DistanceExtensions.kt` | The remaining metric units are universally understood in their native form |
+| `object` singleton pattern | Stateless utility — no instance management needed |
+
+## Related
+
+- **User-facing docs**: [Units & Locale](../user/units-and-locale) explains what end users see
+- **Source code**: `core/common/src/commonMain/kotlin/org/meshtastic/core/common/util/MetricFormatter.kt`
+- **Tests**: `core/common/src/commonTest/kotlin/org/meshtastic/core/common/util/MetricFormatterTest.kt`

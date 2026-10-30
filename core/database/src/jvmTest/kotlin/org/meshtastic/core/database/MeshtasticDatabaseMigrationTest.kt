@@ -1,0 +1,754 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.database
+
+import androidx.room3.testing.MigrationTestHelper
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
+import kotlinx.coroutines.test.runTest
+import java.io.File
+import kotlin.io.path.Path
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/**
+ * Creates the earliest exported schema (v3) and walks every auto-migration up to the current version, validating the
+ * resulting schema against the exported JSON at each step. This is the guard that a broken migration would trip
+ * *before* users hit [MeshtasticDatabase]'s `fallbackToDestructiveMigration(dropAllTables = false)`, which would
+ * otherwise silently wipe their data.
+ *
+ * Runs on the JVM target — so it is part of `:core:database:allTests` and executes in PR CI. The JVM
+ * [MigrationTestHelper] reads the exported schemas straight from the module's `schemas/` directory, so no APK/asset
+ * packaging is needed (unlike the instrumented `androidDeviceTest` variant, which does not run in the PR pipeline).
+ */
+class MeshtasticDatabaseMigrationTest {
+
+    // The JVM MigrationTestHelper resolves schemas relative to the Gradle test working directory (the module dir).
+    private val schemaDir = Path("schemas")
+
+    private val dbFile = File.createTempFile("meshtastic-migration", ".db").apply { delete() }
+
+    // Not wired as a @Rule: jvmTest runs on the JUnit Platform, where JUnit4 @Rule does not apply. Connections are
+    // closed inline instead.
+    private val helper =
+        MigrationTestHelper(
+            schemaDirectoryPath = schemaDir,
+            databasePath = dbFile.toPath(),
+            driver = BundledSQLiteDriver(),
+            databaseClass = MeshtasticDatabase::class,
+            databaseFactory = { MeshtasticDatabaseConstructor.initialize() },
+        )
+
+    @AfterTest
+    fun cleanUp() {
+        dbFile.delete()
+    }
+
+    @Test
+    fun migrateAll() = runTest {
+        helper.createDatabase(EARLIEST_SCHEMA_VERSION).close()
+        // Every bump is an @AutoMigration except the manual 52→53 (FTS rebuild) and 63→64 (no log table rebuild).
+        helper.runMigrationsAndValidate(latestSchemaVersion(), MANUAL_MIGRATIONS).close()
+    }
+
+    /**
+     * The 50→51 and 51→52 auto-migrations both recreate `packet` (DROP + RENAME) underneath the `packet_fts` FTS5
+     * external-content table. In production (2.8.1, build 29321949) upgraders came out of that chain with the FTS
+     * shadow tables desynced from the content table, and every later packet write failed with SQLITE_CORRUPT_VTAB (267,
+     * "database disk image is malformed") — permanently, since the sync triggers surface the desync on each write
+     * instead of repairing it. [MeshtasticDatabase.MIGRATION_52_53] rebuilds the index; this proves a populated index
+     * comes out of the chain consistent for the exact write shapes that stormed in the field.
+     */
+    @Test
+    fun ftsIndexSurvivesPacketTableRecreations() = runTest {
+        helper.createDatabase(RSSI_NULLABLE_FROM_VERSION).use { connection ->
+            // Simulate a live install: Room's runtime sync triggers exist and the index is populated through them.
+            FTS_SYNC_TRIGGERS.forEach(connection::execSQL)
+            connection.execSQL(
+                "INSERT INTO packet (uuid, myNodeNum, port_num, contact_key, received_time, read, data, snr, rssi, " +
+                    "message_text) VALUES (1, 42, 1, '0^all', 1000, 0, '{}', 5.0, -70, 'hello mesh world')",
+            )
+            connection.execSQL(
+                "INSERT INTO packet (uuid, myNodeNum, port_num, contact_key, received_time, read, data, snr, rssi, " +
+                    "message_text) VALUES (2, 42, 1, '0^all', 2000, 0, '{}', 5.0, -70, 'second message here')",
+            )
+            assertEquals(
+                listOf("1"),
+                queryColumn(connection, "SELECT rowid FROM packet_fts WHERE packet_fts MATCH 'hello'"),
+            )
+        }
+
+        val migrated =
+            helper.runMigrationsAndValidate(FTS_REBUILD_TO_VERSION, listOf(MeshtasticDatabase.MIGRATION_52_53))
+        migrated.use { connection ->
+            // Room recreates the sync triggers on open; the migrations dropped them with the old packet table.
+            FTS_SYNC_TRIGGERS.forEach(connection::execSQL)
+            // rank=1 verifies the index against the external-content table, not just its internal shape.
+            connection.execSQL("INSERT INTO packet_fts(packet_fts, rank) VALUES('integrity-check', 1)")
+            // Both rows and their text survived the two table recreations before anything mutates them.
+            assertEquals(listOf("1", "2"), queryColumn(connection, "SELECT uuid FROM packet ORDER BY uuid"))
+            assertEquals(
+                listOf("hello mesh world", "second message here"),
+                queryColumn(connection, "SELECT message_text FROM packet ORDER BY uuid"),
+            )
+            // The write shapes that stormed with error 267 in the field: clearUnreadCount and message deletion.
+            connection.execSQL("UPDATE packet SET read = 1 WHERE contact_key = '0^all'")
+            connection.execSQL("DELETE FROM packet WHERE uuid = 2")
+            connection.execSQL("INSERT INTO packet_fts(packet_fts, rank) VALUES('integrity-check', 1)")
+            assertEquals(
+                listOf("1"),
+                queryColumn(connection, "SELECT rowid FROM packet_fts WHERE packet_fts MATCH 'hello'"),
+            )
+            assertTrue(
+                queryColumn(connection, "SELECT rowid FROM packet_fts WHERE packet_fts MATCH 'second'").isEmpty(),
+            )
+        }
+    }
+
+    /**
+     * 54→55 adds the `maintenance_uf2_cache` table. [migrateAll] only proves the resulting schema validates from an
+     * empty database; this proves an existing install's rows are untouched by the addition — specifically the
+     * `bootloader_ota_quirks_cache` row added one version earlier, whose `softDeviceVariants` table gates a destructive
+     * flash and must survive the upgrade rather than silently reverting to the bundled seed.
+     */
+    @Test
+    fun maintenanceUf2TableAddedWithoutDisturbingTheQuirksCache() = runTest {
+        helper.createDatabase(MAINTENANCE_UF2_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO bootloader_ota_quirks_cache (id, devices_json, soft_device_variants_json) " +
+                    "VALUES (0, '[{\"hwModel\":\"HELTEC_V3\"}]', '[{\"target\":\"rak4631\",\"variant\":\"7.3.0\"}]')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            MAINTENANCE_UF2_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_52_53),
+        ).use { connection ->
+            assertEquals(
+                listOf("[{\"target\":\"rak4631\",\"variant\":\"7.3.0\"}]"),
+                queryColumn(connection, "SELECT soft_device_variants_json FROM bootloader_ota_quirks_cache"),
+            )
+            assertEquals(
+                listOf("[{\"hwModel\":\"HELTEC_V3\"}]"),
+                queryColumn(connection, "SELECT devices_json FROM bootloader_ota_quirks_cache"),
+            )
+            // The new table exists, is empty, and accepts the single row the repository writes.
+            assertTrue(queryColumn(connection, "SELECT manifest_json FROM maintenance_uf2_cache").isEmpty())
+            connection.execSQL("INSERT INTO maintenance_uf2_cache (id, manifest_json) VALUES (0, '{}')")
+            assertEquals(listOf("{}"), queryColumn(connection, "SELECT manifest_json FROM maintenance_uf2_cache"))
+        }
+    }
+
+    /**
+     * 55→56 adds `contact_settings.draft`. [migrateAll] only proves the resulting schema validates from an empty
+     * database; this proves an existing install's per-conversation state survives the addition — mute, last-read and
+     * filtering are what stop a notification firing for a muted channel or re-announcing a message already read, so
+     * they must not revert to defaults on upgrade. The new column must arrive as an empty string, because the draft UI
+     * treats blank as "nothing in progress" and NULL would surface as a phantom draft row.
+     */
+    @Test
+    fun draftColumnAddedWithoutDisturbingContactSettings() = runTest {
+        helper.createDatabase(DRAFT_COLUMN_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO contact_settings (contact_key, muteUntil, last_read_message_uuid, " +
+                    "last_read_message_timestamp, filtering_disabled) VALUES ('0^all', 9999, 7, 5000, 1)",
+            )
+            connection.execSQL("INSERT INTO contact_settings (contact_key, muteUntil) VALUES ('0!abcdef01', 0)")
+        }
+
+        helper.runMigrationsAndValidate(
+            DRAFT_COLUMN_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_52_53),
+        ).use { connection ->
+            assertEquals(
+                listOf("0!abcdef01", "0^all"),
+                queryColumn(connection, "SELECT contact_key FROM contact_settings ORDER BY contact_key"),
+            )
+            assertEquals(
+                listOf("9999"),
+                queryColumn(connection, "SELECT muteUntil FROM contact_settings " + "WHERE contact_key = '0^all'"),
+            )
+            assertEquals(
+                listOf("7"),
+                queryColumn(
+                    connection,
+                    "SELECT last_read_message_uuid FROM contact_settings " + "WHERE contact_key = '0^all'",
+                ),
+            )
+            assertEquals(
+                listOf("5000"),
+                queryColumn(
+                    connection,
+                    "SELECT last_read_message_timestamp FROM contact_settings " + "WHERE contact_key = '0^all'",
+                ),
+            )
+            assertEquals(
+                listOf("1"),
+                queryColumn(
+                    connection,
+                    "SELECT filtering_disabled FROM contact_settings " + "WHERE contact_key = '0^all'",
+                ),
+            )
+            // Empty, never NULL — blank is what the UI reads as "no draft".
+            assertEquals(
+                listOf("", ""),
+                queryColumn(connection, "SELECT draft FROM contact_settings ORDER BY contact_key"),
+            )
+            connection.execSQL("UPDATE contact_settings SET draft = 'half typed' WHERE contact_key = '0^all'")
+            assertEquals(
+                listOf("half typed"),
+                queryColumn(connection, "SELECT draft FROM contact_settings WHERE contact_key = '0^all'"),
+            )
+        }
+    }
+
+    /**
+     * 56→57 adds `contact_settings.pinned`. [migrateAll] only proves the resulting schema validates from an empty
+     * database; this proves an existing install's per-conversation state survives the addition — mute, last-read,
+     * filtering and the draft added one version earlier all have to come through untouched, and `pinned` must arrive
+     * false so no conversation silently jumps to the top of the list on upgrade.
+     */
+    @Test
+    fun pinnedColumnAddedWithoutDisturbingContactSettings() = runTest {
+        helper.createDatabase(PINNED_COLUMN_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO contact_settings (contact_key, muteUntil, last_read_message_uuid, " +
+                    "last_read_message_timestamp, filtering_disabled, draft) " +
+                    "VALUES ('0^all', 9999, 7, 5000, 1, 'half typed')",
+            )
+            connection.execSQL("INSERT INTO contact_settings (contact_key, muteUntil) VALUES ('0!abcdef01', 0)")
+        }
+
+        helper.runMigrationsAndValidate(
+            PINNED_COLUMN_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_52_53),
+        ).use { connection ->
+            assertEquals(
+                listOf("0!abcdef01", "0^all"),
+                queryColumn(connection, "SELECT contact_key FROM contact_settings ORDER BY contact_key"),
+            )
+            assertEquals(
+                listOf("9999"),
+                queryColumn(connection, "SELECT muteUntil FROM contact_settings WHERE contact_key = '0^all'"),
+            )
+            assertEquals(
+                listOf("5000"),
+                queryColumn(
+                    connection,
+                    "SELECT last_read_message_timestamp FROM contact_settings WHERE contact_key = '0^all'",
+                ),
+            )
+            assertEquals(
+                listOf("half typed"),
+                queryColumn(connection, "SELECT draft FROM contact_settings WHERE contact_key = '0^all'"),
+            )
+            // Nothing is pinned by upgrading; the list order users had is the order they keep.
+            assertEquals(
+                listOf("0", "0"),
+                queryColumn(connection, "SELECT pinned FROM contact_settings ORDER BY contact_key"),
+            )
+            connection.execSQL("UPDATE contact_settings SET pinned = 1 WHERE contact_key = '0^all'")
+            assertEquals(
+                listOf("1"),
+                queryColumn(connection, "SELECT pinned FROM contact_settings WHERE contact_key = '0^all'"),
+            )
+        }
+    }
+
+    /**
+     * 50→51 makes the three `rssi` columns nullable, which Room implements by recreating `packet`, `reactions` and
+     * `discovered_node` (DROP + RENAME). [migrateAll] only proves the resulting schema validates from an empty
+     * database; this proves existing rows survive the rebuild with their values — including a legacy `rssi = 0`, which
+     * stays 0 rather than becoming NULL.
+     */
+    @Test
+    fun rssiColumnsGoNullableWithoutLosingRows() = runTest {
+        helper.createDatabase(RSSI_NULLABLE_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO packet (uuid, myNodeNum, port_num, contact_key, received_time, read, data, snr, rssi) " +
+                    "VALUES (1, 42, 1, '0^all', 1000, 1, '{}', 5.0, 0)",
+            )
+            connection.execSQL(
+                "INSERT INTO reactions (myNodeNum, reply_id, user_id, emoji, timestamp, snr, rssi) " +
+                    "VALUES (42, 7, '!abc', 'X', 2000, 5.0, -70)",
+            )
+            connection.execSQL(
+                "INSERT INTO discovery_session (id, timestamp, presets_scanned, home_preset) " +
+                    "VALUES (1, 3000, 1, 'LONG_FAST')",
+            )
+            connection.execSQL(
+                "INSERT INTO discovery_preset_result (id, session_id, preset_name) VALUES (1, 1, 'LONG_FAST')",
+            )
+            connection.execSQL(
+                "INSERT INTO discovered_node (id, preset_result_id, node_num, snr, rssi) VALUES (1, 1, 99, 5.0, 0)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(RSSI_NULLABLE_TO_VERSION, emptyList()).use { connection ->
+            assertEquals(listOf("0"), queryColumn(connection, "SELECT rssi FROM packet"))
+            assertEquals(listOf("-70"), queryColumn(connection, "SELECT rssi FROM reactions"))
+            assertEquals(listOf("0"), queryColumn(connection, "SELECT rssi FROM discovered_node"))
+            // The recreate must not have orphaned the cascading FK target.
+            assertEquals(listOf("1"), queryColumn(connection, "SELECT preset_result_id FROM discovered_node"))
+            // A NULL is now storable where the column was previously NOT NULL DEFAULT 0.
+            connection.execSQL("UPDATE packet SET rssi = NULL WHERE uuid = 1")
+            assertEquals(listOf(null), queryColumn(connection, "SELECT rssi FROM packet"))
+        }
+    }
+
+    @Test
+    fun snrColumnsGoNullableWithoutLosingRows() = runTest {
+        helper.createDatabase(SNR_NULLABLE_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO packet (uuid, myNodeNum, port_num, contact_key, received_time, read, data, snr, rssi) " +
+                    "VALUES (1, 42, 1, '0^all', 1000, 1, '{}', 0.0, -70)",
+            )
+            connection.execSQL(
+                "INSERT INTO reactions (myNodeNum, reply_id, user_id, emoji, timestamp, snr, rssi) " +
+                    "VALUES (42, 7, '!abc', 'X', 2000, -12.5, -70)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(SNR_NULLABLE_TO_VERSION, emptyList()).use { connection ->
+            // A stored 0 dB must survive the recreate as 0, not become NULL: it is a real reading.
+            assertEquals(listOf("0.0"), queryColumn(connection, "SELECT snr FROM packet"))
+            assertEquals(listOf("-12.5"), queryColumn(connection, "SELECT snr FROM reactions"))
+            // A NULL is now storable where the column was previously NOT NULL DEFAULT 0.
+            connection.execSQL("UPDATE packet SET snr = NULL WHERE uuid = 1")
+            assertEquals(listOf(null), queryColumn(connection, "SELECT snr FROM packet"))
+        }
+    }
+
+    /** Reads one column of every row as a string, with SQL NULL surfaced as Kotlin null. */
+
+    /**
+     * 57→58 adds `nodes.heard_on_current_lora`, which gates whether a node is shown as unreachable and offered for
+     * removal. It defaults to 1 precisely so rows written before the column existed are never flagged: a default of 0
+     * would present every pre-upgrade node as unheard on first launch. This proves both the default and that existing
+     * node data survives the addition.
+     */
+    @Test
+    fun heardOnCurrentLoraColumnDefaultsToHeardAndPreservesNodes() = runTest {
+        helper.createDatabase(HEARD_ON_LORA_FROM_VERSION).use { connection ->
+            // Every NOT NULL column without a default in schema 57; the BLOBs are empty protos.
+            val columns =
+                "num, user, position, latitude, longitude, snr, rssi, last_heard, device_metrics, channel, " +
+                    "via_mqtt, hops_away, is_favorite, environment_metrics, power_metrics, paxcounter"
+            connection.execSQL(
+                "INSERT INTO nodes ($columns, long_name, short_name, notes) VALUES " +
+                    "(42, x'', x'', 0.0, 0.0, 0.0, 0, 1000, x'', 0, 0, 1, 1, x'', x'', x'', " +
+                    "'Minnie Mouse', 'MiMo', 'keep me')",
+            )
+            connection.execSQL(
+                "INSERT INTO nodes ($columns, long_name, short_name) VALUES " +
+                    "(43, x'', x'', 0.0, 0.0, 0.0, 0, 2000, x'', 0, 0, 2, 0, x'', x'', x'', 'Mickey', 'MiMo2')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            HEARD_ON_LORA_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_52_53),
+        ).use { connection ->
+            // Both rows survive, and neither reads as unheard.
+            assertEquals(listOf("42", "43"), queryColumn(connection, "SELECT num FROM nodes ORDER BY num"))
+            assertEquals(
+                listOf("1", "1"),
+                queryColumn(connection, "SELECT heard_on_current_lora FROM nodes ORDER BY num"),
+            )
+            // Pre-existing values are untouched by the column addition.
+            assertEquals(listOf("Minnie Mouse"), queryColumn(connection, "SELECT long_name FROM nodes WHERE num = 42"))
+            assertEquals(listOf("keep me"), queryColumn(connection, "SELECT notes FROM nodes WHERE num = 42"))
+            assertEquals(listOf("1"), queryColumn(connection, "SELECT is_favorite FROM nodes WHERE num = 42"))
+            assertEquals(listOf("1000"), queryColumn(connection, "SELECT last_heard FROM nodes WHERE num = 42"))
+        }
+    }
+
+    /**
+     * 58→59 adds `nodes.key_match` and `nodes.new_public_key`, the record of a refused key substitution. `key_match`
+     * defaults to 1 so rows written before the column existed are not read as mismatched on first launch; those rows
+     * recorded a mismatch the old way, as the zero sentinel in `public_key`, and have no refused key to report, so
+     * `new_public_key` stays null. This proves both defaults and that the stored key survives the addition byte for
+     * byte, which is the whole point of first-wins.
+     */
+    @Test
+    fun keyMatchColumnsDefaultToMatchedAndPreserveNodes() = runTest {
+        val storedKeyHex = "01".repeat(PUBLIC_KEY_BYTES)
+        helper.createDatabase(KEY_MATCH_FROM_VERSION).use { connection ->
+            // Every NOT NULL column without a default in schema 58; the BLOBs are empty protos.
+            val columns =
+                "num, user, position, latitude, longitude, snr, rssi, last_heard, device_metrics, channel, " +
+                    "via_mqtt, hops_away, is_favorite, environment_metrics, power_metrics, paxcounter"
+            connection.execSQL(
+                "INSERT INTO nodes ($columns, long_name, public_key) VALUES " +
+                    "(42, x'', x'', 0.0, 0.0, 0.0, 0, 1000, x'', 0, 0, 1, 1, x'', x'', x'', " +
+                    "'Minnie Mouse', x'$storedKeyHex')",
+            )
+            connection.execSQL(
+                "INSERT INTO nodes ($columns, long_name) VALUES " +
+                    "(43, x'', x'', 0.0, 0.0, 0.0, 0, 2000, x'', 0, 0, 2, 0, x'', x'', x'', 'Mickey')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            KEY_MATCH_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_52_53),
+        ).use { connection ->
+            // Both rows survive; neither reads as a mismatch, and neither has a refused key to report.
+            assertEquals(listOf("42", "43"), queryColumn(connection, "SELECT num FROM nodes ORDER BY num"))
+            assertEquals(listOf("1", "1"), queryColumn(connection, "SELECT key_match FROM nodes ORDER BY num"))
+            assertEquals(
+                listOf<String?>(null, null),
+                queryColumn(connection, "SELECT new_public_key FROM nodes ORDER BY num"),
+            )
+            // The stored key is exactly what was written; the column addition touched nothing.
+            assertEquals(
+                listOf(storedKeyHex.uppercase()),
+                queryColumn(connection, "SELECT hex(public_key) FROM nodes WHERE num = 42"),
+            )
+            assertEquals(listOf("Minnie Mouse"), queryColumn(connection, "SELECT long_name FROM nodes WHERE num = 42"))
+            assertEquals(listOf("1000"), queryColumn(connection, "SELECT last_heard FROM nodes WHERE num = 42"))
+        }
+    }
+
+    /**
+     * 59→60 adds `contact_settings.display_name` and `channel_set.last_reconciled`. Per-conversation state and the
+     * stored channel set come through untouched. `display_name` arrives empty, which is what every live conversation
+     * holds, and `last_reconciled` arrives NULL, so the first reconcile captures the current set and moves nothing.
+     */
+    @Test
+    fun displayNameAndReconcileBaselineAddedWithoutDisturbingConversationsOrChannels() = runTest {
+        helper.createDatabase(DISPLAY_NAME_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO contact_settings (contact_key, muteUntil, last_read_message_uuid, " +
+                    "last_read_message_timestamp, filtering_disabled, draft, pinned) " +
+                    "VALUES ('0^all', 9999, 7, 5000, 1, 'half typed', 1)",
+            )
+            connection.execSQL("INSERT INTO contact_settings (contact_key, muteUntil) VALUES ('0!abcdef01', 0)")
+            connection.execSQL("INSERT INTO channel_set (id, channel_set) VALUES (0, x'$STORED_CHANNEL_SET_HEX')")
+        }
+
+        helper.runMigrationsAndValidate(DISPLAY_NAME_TO_VERSION, emptyList()).use { connection ->
+            val live = "FROM contact_settings WHERE contact_key = '0^all'"
+            assertEquals(
+                listOf("0!abcdef01", "0^all"),
+                queryColumn(connection, "SELECT contact_key FROM contact_settings ORDER BY contact_key"),
+            )
+            assertEquals(listOf("9999"), queryColumn(connection, "SELECT muteUntil $live"))
+            assertEquals(listOf("7"), queryColumn(connection, "SELECT last_read_message_uuid $live"))
+            assertEquals(listOf("half typed"), queryColumn(connection, "SELECT draft $live"))
+            assertEquals(listOf("1"), queryColumn(connection, "SELECT pinned $live"))
+            assertEquals(
+                listOf("", ""),
+                queryColumn(connection, "SELECT display_name FROM contact_settings ORDER BY contact_key"),
+            )
+            assertEquals(listOf("0"), queryColumn(connection, "SELECT id FROM channel_set"))
+            assertEquals(
+                listOf(STORED_CHANNEL_SET_HEX),
+                queryColumn(connection, "SELECT hex(channel_set) FROM channel_set"),
+            )
+            assertEquals(listOf(null), queryColumn(connection, "SELECT last_reconciled FROM channel_set"))
+        }
+    }
+
+    /**
+     * 60→61 adds `nodes.soil_water_metrics`. Existing nodes keep their data, and the new column arrives as an empty
+     * blob, never NULL: it decodes to an empty `Telemetry`, the same as a node that has never sent soil readings.
+     */
+    @Test
+    fun soilWaterColumnAddedAsEmptyBlobWithoutDisturbingNodes() = runTest {
+        helper.createDatabase(SOIL_WATER_FROM_VERSION).use { connection ->
+            // Every NOT NULL column without a default in schema 60; the BLOBs are empty protos.
+            val columns =
+                "num, user, position, latitude, longitude, snr, rssi, last_heard, device_metrics, channel, " +
+                    "via_mqtt, hops_away, is_favorite, environment_metrics, power_metrics, paxcounter"
+            connection.execSQL(
+                "INSERT INTO nodes ($columns, long_name, notes) VALUES " +
+                    "(42, x'', x'', 0.0, 0.0, -6.25, -90, 1000, x'', 0, 0, 1, 1, x'', x'', x'', " +
+                    "'Minnie Mouse', 'keep me')",
+            )
+            connection.execSQL(
+                "INSERT INTO nodes ($columns, long_name) VALUES " +
+                    "(43, x'', x'', 0.0, 0.0, 0.0, 0, 2000, x'', 0, 0, 2, 0, x'', x'', x'', 'Mickey')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(SOIL_WATER_TO_VERSION, emptyList()).use { connection ->
+            assertEquals(listOf("42", "43"), queryColumn(connection, "SELECT num FROM nodes ORDER BY num"))
+            assertEquals(listOf("Minnie Mouse"), queryColumn(connection, "SELECT long_name FROM nodes WHERE num = 42"))
+            assertEquals(listOf("keep me"), queryColumn(connection, "SELECT notes FROM nodes WHERE num = 42"))
+            assertEquals(listOf("-6.25"), queryColumn(connection, "SELECT snr FROM nodes WHERE num = 42"))
+            assertEquals(listOf("-90"), queryColumn(connection, "SELECT rssi FROM nodes WHERE num = 42"))
+            assertEquals(listOf("1", "0"), queryColumn(connection, "SELECT is_favorite FROM nodes ORDER BY num"))
+            assertEquals(
+                listOf("blob", "blob"),
+                queryColumn(connection, "SELECT typeof(soil_water_metrics) FROM nodes ORDER BY num"),
+            )
+            assertEquals(
+                listOf("0", "0"),
+                queryColumn(connection, "SELECT length(soil_water_metrics) FROM nodes ORDER BY num"),
+            )
+        }
+    }
+
+    /**
+     * 61→62 adds `device_hardware.is_maker`. [migrateAll] only proves the resulting schema validates from an empty
+     * database; this proves a cached registry row survives the addition with the fields the support badge and the
+     * firmware flow read, and that the new column arrives as 0 - an absent flag means "not maker", never NULL.
+     */
+    @Test
+    fun isMakerColumnAddedWithoutDisturbingDeviceHardware() = runTest {
+        helper.createDatabase(IS_MAKER_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO device_hardware (actively_supported, architecture, display_name, hwModel, " +
+                    "hw_model_slug, last_updated, platformio_target, support_level, tags) " +
+                    "VALUES (1, 'esp32-s3', 'Heltec V3', 43, 'HELTEC_V3', 1000, 'heltec-v3', 1, " +
+                    "'[\"Heltec\"]')",
+            )
+            connection.execSQL(
+                "INSERT INTO device_hardware (actively_supported, architecture, display_name, hwModel, " +
+                    "hw_model_slug, last_updated, platformio_target, requires_dfu) " +
+                    "VALUES (0, 'nrf52840', 'RAK4631', 9, 'RAK4631', 2000, 'rak4631', 1)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            IS_MAKER_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_52_53),
+        ).use { connection ->
+            assertEquals(
+                listOf("heltec-v3", "rak4631"),
+                queryColumn(connection, "SELECT platformio_target FROM device_hardware ORDER BY platformio_target"),
+            )
+            assertEquals(
+                listOf("1", "0"),
+                queryColumn(connection, "SELECT actively_supported FROM device_hardware ORDER BY platformio_target"),
+            )
+            assertEquals(
+                listOf("1", null),
+                queryColumn(connection, "SELECT support_level FROM device_hardware ORDER BY platformio_target"),
+            )
+            assertEquals(
+                listOf("[\"Heltec\"]", null),
+                queryColumn(connection, "SELECT tags FROM device_hardware ORDER BY platformio_target"),
+            )
+            assertEquals(
+                listOf(null, "1"),
+                queryColumn(connection, "SELECT requires_dfu FROM device_hardware ORDER BY platformio_target"),
+            )
+            // 0, never NULL - the resolver reads an absent flag as not maker.
+            assertEquals(
+                listOf("0", "0"),
+                queryColumn(connection, "SELECT is_maker FROM device_hardware ORDER BY platformio_target"),
+            )
+            connection.execSQL("UPDATE device_hardware SET is_maker = 1 WHERE platformio_target = 'rak4631'")
+            assertEquals(
+                listOf("1"),
+                queryColumn(connection, "SELECT is_maker FROM device_hardware WHERE platformio_target = 'rak4631'"),
+            )
+        }
+    }
+
+    /**
+     * 62→63 adds `reactions.xeddsa_signed` and `reactions.ack_proof_status`. A stored reaction keeps its delivery
+     * state, and both columns arrive as 0: unsigned and ACK_PROOF_ABSENT, which is what every reaction before them was.
+     */
+    @Test
+    fun reactionAuthenticityColumnsAddedWithoutDisturbingReactions() = runTest {
+        helper.createDatabase(REACTION_AUTH_FROM_VERSION).use { connection ->
+            connection.execSQL(
+                "INSERT INTO reactions (myNodeNum, reply_id, user_id, emoji, timestamp, packet_id, status, relays, " +
+                    "`to`) VALUES (7, 1001, '!0000abcd', '👍', 5000, 2002, 3, 1, '!0000beef')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            REACTION_AUTH_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_52_53),
+        ).use { connection ->
+            val row = "FROM reactions WHERE reply_id = 1001"
+            assertEquals(listOf("2002"), queryColumn(connection, "SELECT packet_id $row"))
+            assertEquals(listOf("3"), queryColumn(connection, "SELECT status $row"))
+            assertEquals(listOf("1"), queryColumn(connection, "SELECT relays $row"))
+            assertEquals(listOf("!0000beef"), queryColumn(connection, "SELECT `to` $row"))
+            assertEquals(listOf("0"), queryColumn(connection, "SELECT xeddsa_signed $row"))
+            assertEquals(listOf("0"), queryColumn(connection, "SELECT ack_proof_status $row"))
+        }
+    }
+
+    /**
+     * [MeshtasticDatabase.MIGRATION_63_64] rebuilds only `discovered_node`, to make `snr` nullable, and adds the
+     * `log.received_date` index in place. Every discovered node survives with its values and its parent link, a stored
+     * 0 dB stays 0 because it may be a real reading, and NULL becomes storable. The `log` table is never copied: its
+     * rowids are unchanged and the `traceroute_node_position` row that cascades from it survives. The batched retention
+     * delete is served by the new index instead of a table scan.
+     */
+    @Test
+    fun discoveredNodeSnrGoesNullableAndLogGainsDateIndexWithoutRebuildingLog() = runTest {
+        helper.createDatabase(SCHEMA_64_FROM_VERSION).use { connection ->
+            // Out-of-order rowids: a copy into a fresh table would renumber them.
+            connection.execSQL(
+                "INSERT INTO log (rowid, uuid, type, received_date, message, from_num, port_num) " +
+                    "VALUES (40, 'log-a', 'Packet', 1000, 'first', 42, 3)",
+            )
+            connection.execSQL(
+                "INSERT INTO log (rowid, uuid, type, received_date, message) " +
+                    "VALUES (7, 'log-b', 'LogRecord', 2000, 'second')",
+            )
+            connection.execSQL(
+                "INSERT INTO traceroute_node_position (log_uuid, request_id, node_num, position) " +
+                    "VALUES ('log-a', 5, 77, x'0801')",
+            )
+            connection.execSQL(
+                "INSERT INTO discovery_session (id, timestamp, presets_scanned, home_preset) " +
+                    "VALUES (1, 3000, 'LONG_FAST', 'LONG_FAST')",
+            )
+            connection.execSQL(
+                "INSERT INTO discovery_preset_result (id, session_id, preset_name) VALUES (1, 1, 'LONG_FAST')",
+            )
+            connection.execSQL(
+                "INSERT INTO discovered_node (id, preset_result_id, node_num, neighbor_type, snr, rssi) " +
+                    "VALUES (1, 1, 99, 'mesh', 0.0, NULL)",
+            )
+            connection.execSQL(
+                "INSERT INTO discovered_node (id, preset_result_id, node_num, long_name, neighbor_type, snr, rssi, " +
+                    "message_count) VALUES (2, 1, 100, 'Relay', 'direct', -7.5, -80, 3)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            SCHEMA_64_TO_VERSION,
+            listOf(MeshtasticDatabase.MIGRATION_63_64),
+        ).use { connection ->
+            val logs = "FROM log ORDER BY received_date"
+            assertEquals(listOf("40", "7"), queryColumn(connection, "SELECT rowid $logs"))
+            assertEquals(listOf("log-a", "log-b"), queryColumn(connection, "SELECT uuid $logs"))
+            assertEquals(listOf("Packet", "LogRecord"), queryColumn(connection, "SELECT type $logs"))
+            assertEquals(listOf("1000", "2000"), queryColumn(connection, "SELECT received_date $logs"))
+            assertEquals(listOf("first", "second"), queryColumn(connection, "SELECT message $logs"))
+            assertEquals(listOf("42", "0"), queryColumn(connection, "SELECT from_num $logs"))
+            assertEquals(listOf("3", "0"), queryColumn(connection, "SELECT port_num $logs"))
+            val positions = "FROM traceroute_node_position WHERE log_uuid = 'log-a'"
+            assertEquals(listOf("77"), queryColumn(connection, "SELECT node_num $positions"))
+            assertEquals(listOf("0801"), queryColumn(connection, "SELECT hex(position) $positions"))
+            assertTrue(
+                "index_log_received_date" in queryColumn(connection, "SELECT name FROM pragma_index_list('log')"),
+            )
+            assertEquals(
+                listOf("received_date"),
+                queryColumn(connection, "SELECT name FROM pragma_index_info('index_log_received_date')"),
+            )
+            val deletePlan =
+                queryPlan(
+                    connection,
+                    "DELETE FROM log WHERE rowid IN (SELECT rowid FROM log WHERE received_date < 1500 LIMIT 100)",
+                )
+            assertTrue(deletePlan.any { "index_log_received_date" in it }, deletePlan.toString())
+
+            val byId = "FROM discovered_node ORDER BY id"
+            assertEquals(listOf("1", "2"), queryColumn(connection, "SELECT id $byId"))
+            assertEquals(listOf("99", "100"), queryColumn(connection, "SELECT node_num $byId"))
+            assertEquals(listOf("1", "1"), queryColumn(connection, "SELECT preset_result_id $byId"))
+            assertEquals(listOf("0.0", "-7.5"), queryColumn(connection, "SELECT snr $byId"))
+            assertEquals(listOf(null, "-80"), queryColumn(connection, "SELECT rssi $byId"))
+            assertEquals(listOf("mesh", "direct"), queryColumn(connection, "SELECT neighbor_type $byId"))
+            assertEquals(listOf(null, "Relay"), queryColumn(connection, "SELECT long_name $byId"))
+            assertEquals(listOf("0", "3"), queryColumn(connection, "SELECT message_count $byId"))
+            connection.execSQL("UPDATE discovered_node SET snr = NULL WHERE id = 1")
+            assertEquals(listOf(null), queryColumn(connection, "SELECT snr FROM discovered_node WHERE id = 1"))
+        }
+    }
+
+    /** The `detail` column of `EXPLAIN QUERY PLAN` for [sql], one entry per plan step. */
+    private fun queryPlan(connection: SQLiteConnection, sql: String): List<String> =
+        connection.prepare("EXPLAIN QUERY PLAN $sql").use { statement ->
+            buildList {
+                while (statement.step()) {
+                    add(statement.getText(QUERY_PLAN_DETAIL_COLUMN))
+                }
+            }
+        }
+
+    private fun queryColumn(connection: SQLiteConnection, sql: String): List<String?> =
+        connection.prepare(sql).use { statement ->
+            buildList {
+                while (statement.step()) {
+                    add(if (statement.isNull(0)) null else statement.getText(0))
+                }
+            }
+        }
+
+    private fun latestSchemaVersion(): Int {
+        val dbSchemas = schemaDir.resolve(checkNotNull(MeshtasticDatabase::class.qualifiedName)).toFile()
+        return dbSchemas
+            .listFiles { f -> f.extension == "json" }
+            ?.mapNotNull { it.nameWithoutExtension.toIntOrNull() }
+            ?.maxOrNull() ?: error("No exported Room schemas found in $dbSchemas")
+    }
+
+    private companion object {
+        const val EARLIEST_SCHEMA_VERSION = 3
+        const val FTS_REBUILD_TO_VERSION = 53
+        const val MAINTENANCE_UF2_FROM_VERSION = 54
+        const val MAINTENANCE_UF2_TO_VERSION = 55
+        const val DRAFT_COLUMN_FROM_VERSION = 55
+        const val DRAFT_COLUMN_TO_VERSION = 56
+        const val PINNED_COLUMN_FROM_VERSION = 56
+        const val PINNED_COLUMN_TO_VERSION = 57
+        const val HEARD_ON_LORA_FROM_VERSION = 57
+        const val HEARD_ON_LORA_TO_VERSION = 58
+        const val KEY_MATCH_FROM_VERSION = 58
+        const val KEY_MATCH_TO_VERSION = 59
+        const val DISPLAY_NAME_FROM_VERSION = 59
+        const val DISPLAY_NAME_TO_VERSION = 60
+        const val SOIL_WATER_FROM_VERSION = 60
+        const val SOIL_WATER_TO_VERSION = 61
+        const val IS_MAKER_FROM_VERSION = 61
+        const val IS_MAKER_TO_VERSION = 62
+        const val REACTION_AUTH_FROM_VERSION = 62
+        const val REACTION_AUTH_TO_VERSION = 63
+        const val SCHEMA_64_FROM_VERSION = 63
+        const val SCHEMA_64_TO_VERSION = 64
+        const val QUERY_PLAN_DETAIL_COLUMN = 3
+
+        /** Every hand-written migration, which a walk across 52→53 or 63→64 must be given. */
+        val MANUAL_MIGRATIONS = listOf(MeshtasticDatabase.MIGRATION_52_53, MeshtasticDatabase.MIGRATION_63_64)
+        const val PUBLIC_KEY_BYTES = 32
+        const val STORED_CHANNEL_SET_HEX = "0A0612044D657368"
+
+        /** Room's runtime FTS content-sync triggers, verbatim from the generated MeshtasticDatabase_Impl. */
+        val FTS_SYNC_TRIGGERS =
+            listOf(
+                "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_packet_fts_BEFORE_UPDATE BEFORE UPDATE ON " +
+                    "`packet` BEGIN DELETE FROM `packet_fts` WHERE `rowid`=OLD.`rowid`; END",
+                "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_packet_fts_BEFORE_DELETE BEFORE DELETE ON " +
+                    "`packet` BEGIN DELETE FROM `packet_fts` WHERE `rowid`=OLD.`rowid`; END",
+                "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_packet_fts_AFTER_UPDATE AFTER UPDATE ON " +
+                    "`packet` BEGIN INSERT INTO `packet_fts`(`rowid`, `message_text`) VALUES (NEW.`rowid`, " +
+                    "NEW.`message_text`); END",
+                "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_packet_fts_AFTER_INSERT AFTER INSERT ON " +
+                    "`packet` BEGIN INSERT INTO `packet_fts`(`rowid`, `message_text`) VALUES (NEW.`rowid`, " +
+                    "NEW.`message_text`); END",
+            )
+        const val RSSI_NULLABLE_FROM_VERSION = 50
+        const val RSSI_NULLABLE_TO_VERSION = 51
+        const val SNR_NULLABLE_FROM_VERSION = 51
+        const val SNR_NULLABLE_TO_VERSION = 52
+    }
+}

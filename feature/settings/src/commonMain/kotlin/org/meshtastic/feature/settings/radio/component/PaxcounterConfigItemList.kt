@@ -1,0 +1,134 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.paxcounter
+import org.meshtastic.core.resources.paxcounter_config
+import org.meshtastic.core.resources.schema_paxcounter_ble_threshold
+import org.meshtastic.core.resources.schema_paxcounter_ble_threshold_description
+import org.meshtastic.core.resources.schema_paxcounter_enabled
+import org.meshtastic.core.resources.schema_paxcounter_enabled_description
+import org.meshtastic.core.resources.schema_paxcounter_paxcounter_update_interval
+import org.meshtastic.core.resources.schema_paxcounter_paxcounter_update_interval_description
+import org.meshtastic.core.resources.schema_paxcounter_wifi_threshold
+import org.meshtastic.core.resources.schema_paxcounter_wifi_threshold_description
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.SignedIntegerEditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.IntervalConfiguration
+import org.meshtastic.feature.settings.util.fieldTitle
+import org.meshtastic.feature.settings.util.toDisplayString
+import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.ble_threshold
+import org.meshtastic.proto.wifi_threshold
+
+@Composable
+fun PaxcounterConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val paxcounterConfig = state.moduleConfig.paxcounter ?: ModuleConfig.PaxcounterConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = paxcounterConfig)
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.paxcounter),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = ModuleConfig.Builder().also { wb -> wb.paxcounter = it }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ModuleRoute.PAXCOUNTER.route)) {
+            PaxcounterSettings(formState = formState, enabled = state.connected)
+        }
+    }
+}
+
+@Composable
+private fun PaxcounterSettings(formState: ConfigState<ModuleConfig.PaxcounterConfig>, enabled: Boolean) {
+    val focusManager = LocalFocusManager.current
+    TitledCard(title = stringResource(Res.string.paxcounter_config)) {
+        SwitchPreference(
+            title = stringResource(Res.string.schema_paxcounter_enabled),
+            modifier = Modifier.settingsField(Res.string.schema_paxcounter_enabled),
+            summary = stringResource(Res.string.schema_paxcounter_enabled_description),
+            checked = formState.value.enabled,
+            enabled = enabled,
+            onCheckedChange = { formState.value = formState.value.newBuilder().also { wb -> wb.enabled = it }.build() },
+            containerColor = CardDefaults.cardColors().containerColor,
+        )
+        HorizontalDivider()
+        val items = remember { IntervalConfiguration.PAX_COUNTER.allowedIntervals }
+        DropDownPreference(
+            title = stringResource(Res.string.schema_paxcounter_paxcounter_update_interval),
+            modifier = Modifier.settingsField(Res.string.schema_paxcounter_paxcounter_update_interval),
+            summary = stringResource(Res.string.schema_paxcounter_paxcounter_update_interval_description),
+            selectedItem = (formState.value.paxcounter_update_interval).toLong(),
+            enabled = enabled,
+            items = items.map { it.value to it.toDisplayString() },
+            onItemSelected = {
+                formState.value =
+                    formState.value.newBuilder().also { wb -> wb.paxcounter_update_interval = it.toInt() }.build()
+            },
+        )
+        HorizontalDivider()
+        SignedIntegerEditTextPreference(
+            title =
+            fieldTitle(Res.string.schema_paxcounter_wifi_threshold, ModuleConfig.PaxcounterConfig.wifi_threshold),
+            modifier = Modifier.settingsField(Res.string.schema_paxcounter_wifi_threshold),
+            summary = stringResource(Res.string.schema_paxcounter_wifi_threshold_description),
+            value = formState.value.wifi_threshold,
+            enabled = enabled,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChanged = {
+                formState.value = formState.value.newBuilder().also { wb -> wb.wifi_threshold = it }.build()
+            },
+        )
+        HorizontalDivider()
+        SignedIntegerEditTextPreference(
+            title = fieldTitle(Res.string.schema_paxcounter_ble_threshold, ModuleConfig.PaxcounterConfig.ble_threshold),
+            modifier = Modifier.settingsField(Res.string.schema_paxcounter_ble_threshold),
+            summary = stringResource(Res.string.schema_paxcounter_ble_threshold_description),
+            value = formState.value.ble_threshold,
+            enabled = enabled,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChanged = {
+                formState.value = formState.value.newBuilder().also { wb -> wb.ble_threshold = it }.build()
+            },
+        )
+    }
+}

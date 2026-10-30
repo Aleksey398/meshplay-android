@@ -1,0 +1,403 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.prefs.ui
+
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.atomicfu.atomic
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import org.koin.core.annotation.Single
+import org.meshtastic.core.di.CoroutineDispatchers
+import org.meshtastic.core.model.DeviceType
+import org.meshtastic.core.prefs.cachedFlow
+import org.meshtastic.core.prefs.di.UiDataStore
+import org.meshtastic.core.repository.NodeFilterPrefs
+import org.meshtastic.core.repository.UiPrefs
+
+@Single
+@Suppress("TooManyFunctions")
+class UiPrefsImpl(private val dataStore: UiDataStore, dispatchers: CoroutineDispatchers) : UiPrefs {
+    private val scope = CoroutineScope(SupervisorJob() + dispatchers.default)
+
+    // Maps nodeNum to a flow for the for the "provide-location-nodeNum" pref
+    private val provideNodeLocationFlows = atomic(persistentMapOf<Int, Lazy<StateFlow<Boolean>>>())
+
+    override val appIntroCompleted: StateFlow<Boolean> =
+        dataStore.data.map { it[KEY_APP_INTRO_COMPLETED] ?: false }.stateIn(scope, SharingStarted.Eagerly, false)
+
+    override fun setAppIntroCompleted(completed: Boolean) {
+        scope.launch { dataStore.edit { it[KEY_APP_INTRO_COMPLETED] = completed } }
+    }
+
+    override val theme: StateFlow<Int> =
+        dataStore.data.map { it[KEY_THEME] ?: -1 }.stateIn(scope, SharingStarted.Lazily, -1)
+
+    override fun setTheme(value: Int) {
+        scope.launch { dataStore.edit { it[KEY_THEME] = value } }
+    }
+
+    // Eagerly, unlike most prefs here: LocaleUnitsProvider folds this into every unit the app renders, so the window
+    // in which a fresh process shows OS units to a user who overrode them should close as early as possible.
+    override val unitsOverride: StateFlow<Int> =
+        dataStore.data.map { it[KEY_UNITS_OVERRIDE] ?: 0 }.stateIn(scope, SharingStarted.Eagerly, 0)
+
+    override fun setUnitsOverride(value: Int) {
+        scope.launch { dataStore.edit { it[KEY_UNITS_OVERRIDE] = value } }
+    }
+
+    override val locale: StateFlow<String> =
+        dataStore.data.map { it[KEY_LOCALE] ?: "" }.stateIn(scope, SharingStarted.Eagerly, "")
+
+    override fun setLocale(languageTag: String) {
+        scope.launch { dataStore.edit { it[KEY_LOCALE] = languageTag } }
+    }
+
+    override val nodeSort: StateFlow<Int> =
+        dataStore.data.map { it[KEY_NODE_SORT] ?: -1 }.stateIn(scope, SharingStarted.Lazily, -1)
+
+    override fun setNodeSort(value: Int) {
+        scope.launch { dataStore.edit { it[KEY_NODE_SORT] = value } }
+    }
+
+    // Defaults on so nodes heard before their NodeInfo arrives stay visible and messageable (design#16).
+    override val nodeFilters: StateFlow<NodeFilterPrefs> =
+        dataStore.data.map { it.toNodeFilterPrefs() }.stateIn(scope, SharingStarted.Lazily, NodeFilterPrefs())
+
+    override fun updateNodeFilters(transform: (NodeFilterPrefs) -> NodeFilterPrefs) {
+        // Read-modify-write inside edit{}, which is transactional — the same lost-update guard updateHiddenLayerUrls
+        // uses. Writing every key rather than the changed one keeps this a single pure transform.
+        scope.launch { dataStore.edit { it.writeNodeFilterPrefs(transform(it.toNodeFilterPrefs())) } }
+    }
+
+    override val hasShownNotPairedWarning: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[KEY_HAS_SHOWN_NOT_PAIRED_WARNING_PREF] ?: false }
+            .stateIn(scope, SharingStarted.Eagerly, false)
+
+    override fun setHasShownNotPairedWarning(shown: Boolean) {
+        scope.launch { dataStore.edit { it[KEY_HAS_SHOWN_NOT_PAIRED_WARNING_PREF] = shown } }
+    }
+
+    override val showQuickChat: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[KEY_SHOW_QUICK_CHAT_PREF] ?: SHOW_QUICK_CHAT_BY_DEFAULT }
+            .stateIn(scope, SharingStarted.Eagerly, SHOW_QUICK_CHAT_BY_DEFAULT)
+
+    override fun toggleShowQuickChat() {
+        scope.launch {
+            dataStore.edit {
+                it[KEY_SHOW_QUICK_CHAT_PREF] = !(it[KEY_SHOW_QUICK_CHAT_PREF] ?: SHOW_QUICK_CHAT_BY_DEFAULT)
+            }
+        }
+    }
+
+    override val showFullMessageTimestamps: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[KEY_SHOW_FULL_MESSAGE_TIMESTAMPS] ?: false }
+            .stateIn(scope, SharingStarted.Eagerly, false)
+
+    override fun setShowFullMessageTimestamps(show: Boolean) {
+        scope.launch { dataStore.edit { it[KEY_SHOW_FULL_MESSAGE_TIMESTAMPS] = show } }
+    }
+
+    override val eventThemeEnabled: StateFlow<Boolean> =
+        dataStore.data.map { it[KEY_EVENT_THEME_ENABLED] ?: true }.stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setEventThemeEnabled(enabled: Boolean) {
+        scope.launch { dataStore.edit { it[KEY_EVENT_THEME_ENABLED] = enabled } }
+    }
+
+    override val bleAutoScan: StateFlow<Boolean> =
+        dataStore.data.map { it[KEY_BLE_AUTO_SCAN] ?: false }.stateIn(scope, SharingStarted.Eagerly, false)
+
+    override fun setBleAutoScan(enabled: Boolean) {
+        scope.launch { dataStore.edit { it[KEY_BLE_AUTO_SCAN] = enabled } }
+    }
+
+    override val networkAutoScan: StateFlow<Boolean> =
+        dataStore.data.map { it[KEY_NETWORK_AUTO_SCAN] ?: false }.stateIn(scope, SharingStarted.Eagerly, false)
+
+    override fun setNetworkAutoScan(enabled: Boolean) {
+        scope.launch { dataStore.edit { it[KEY_NETWORK_AUTO_SCAN] = enabled } }
+    }
+
+    override val selectedConnectionTransport: StateFlow<DeviceType?> =
+        dataStore.data
+            .map { preferences ->
+                preferences[KEY_SELECTED_CONNECTION_TRANSPORT]?.let(::parseDeviceType)
+                    ?: legacySelectedConnectionTransport(preferences)
+            }
+            .stateIn(scope, SharingStarted.Eagerly, null)
+
+    override fun setSelectedConnectionTransport(type: DeviceType) {
+        scope.launch { dataStore.edit { it[KEY_SELECTED_CONNECTION_TRANSPORT] = type.name } }
+    }
+
+    override val firmwareUpdateNotificationKeys: StateFlow<Set<String>> =
+        dataStore.data
+            .map { preferences ->
+                preferences[KEY_FIRMWARE_UPDATE_NOTIFICATION_KEYS]?.split('|')?.filter(String::isNotBlank)?.toSet()
+                    ?: emptySet()
+            }
+            .stateIn(scope, SharingStarted.Eagerly, emptySet())
+
+    override fun recordFirmwareUpdateNotificationKey(key: String) {
+        scope.launch {
+            dataStore.edit { preferences ->
+                val keys =
+                    preferences[KEY_FIRMWARE_UPDATE_NOTIFICATION_KEYS]
+                        ?.split('|')
+                        ?.filter(String::isNotBlank)
+                        ?.toMutableList() ?: mutableListOf()
+                keys.remove(key)
+                keys.add(key)
+                preferences[KEY_FIRMWARE_UPDATE_NOTIFICATION_KEYS] =
+                    keys.takeLast(MAX_FIRMWARE_UPDATE_NOTIFICATION_KEYS).joinToString("|")
+            }
+        }
+    }
+
+    override val keptUnheardNodes: StateFlow<Set<Int>> =
+        dataStore.data
+            .map { preferences -> parseNodeNums(preferences[KEY_KEPT_UNHEARD_NODES]).toSet() }
+            .stateIn(scope, SharingStarted.Eagerly, emptySet())
+
+    override fun keepUnheardNodes(nodeNums: Set<Int>) {
+        scope.launch {
+            dataStore.edit { preferences ->
+                val kept = parseNodeNums(preferences[KEY_KEPT_UNHEARD_NODES]) - nodeNums + nodeNums
+                preferences[KEY_KEPT_UNHEARD_NODES] = kept.takeLast(MAX_KEPT_UNHEARD_NODES).joinToString(",")
+            }
+        }
+    }
+
+    override fun forgetKeptUnheardNodes(nodeNums: Set<Int>) {
+        scope.launch {
+            dataStore.edit { preferences ->
+                val kept = parseNodeNums(preferences[KEY_KEPT_UNHEARD_NODES]) - nodeNums
+                preferences[KEY_KEPT_UNHEARD_NODES] = kept.joinToString(",")
+            }
+        }
+    }
+
+    override fun shouldProvideNodeLocation(nodeNum: Int): StateFlow<Boolean> =
+        cachedFlow(provideNodeLocationFlows, nodeNum) {
+            val key = booleanPreferencesKey(provideLocationKey(nodeNum))
+            dataStore.data.map { it[key] ?: false }.stateIn(scope, SharingStarted.Eagerly, false)
+        }
+
+    override fun setShouldProvideNodeLocation(nodeNum: Int, provide: Boolean) {
+        scope.launch { dataStore.edit { it[booleanPreferencesKey(provideLocationKey(nodeNum))] = provide } }
+    }
+
+    private fun provideLocationKey(nodeNum: Int) = "provide-location-$nodeNum"
+
+    // Node list layout preferences
+
+    override val nodeListDensity: StateFlow<String> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_DENSITY] ?: NodeListLayoutPreferences.DEFAULT_DENSITY }
+            .stateIn(scope, SharingStarted.Eagerly, NodeListLayoutPreferences.DEFAULT_DENSITY)
+
+    override fun setNodeListDensity(value: String) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_DENSITY] = value } }
+    }
+
+    override val shouldShowPower: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_POWER] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowPower(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_POWER] = value } }
+    }
+
+    override val shouldShowLastHeard: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_LAST_HEARD] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowLastHeard(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_LAST_HEARD] = value } }
+    }
+
+    override val lastHeardIsRelative: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_LAST_HEARD_RELATIVE] ?: false }
+            .stateIn(scope, SharingStarted.Eagerly, false)
+
+    override fun setLastHeardIsRelative(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_LAST_HEARD_RELATIVE] = value } }
+    }
+
+    override val shouldShowLocation: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_LOCATION] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowLocation(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_LOCATION] = value } }
+    }
+
+    override val shouldShowHops: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_HOPS] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowHops(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_HOPS] = value } }
+    }
+
+    override val shouldShowSignal: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_SIGNAL] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowSignal(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_SIGNAL] = value } }
+    }
+
+    override val shouldShowChannel: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_CHANNEL] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowChannel(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_CHANNEL] = value } }
+    }
+
+    override val shouldShowRole: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_ROLE] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowRole(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_ROLE] = value } }
+    }
+
+    override val shouldShowTelemetry: StateFlow<Boolean> =
+        dataStore.data
+            .map { it[NodeListLayoutPreferences.KEY_SHOW_TELEMETRY] ?: true }
+            .stateIn(scope, SharingStarted.Eagerly, true)
+
+    override fun setShouldShowTelemetry(value: Boolean) {
+        scope.launch { dataStore.edit { it[NodeListLayoutPreferences.KEY_SHOW_TELEMETRY] = value } }
+    }
+
+    override val chirpyHopBestScore: StateFlow<Int> =
+        dataStore.data.map { it[KEY_CHIRPY_HOP_BEST_SCORE] ?: 0 }.stateIn(scope, SharingStarted.Eagerly, 0)
+
+    override fun recordChirpyHopScore(score: Int) {
+        scope.launch {
+            dataStore.edit { prefs ->
+                if (score > (prefs[KEY_CHIRPY_HOP_BEST_SCORE] ?: 0)) prefs[KEY_CHIRPY_HOP_BEST_SCORE] = score
+            }
+        }
+    }
+
+    private fun Preferences.toNodeFilterPrefs() = NodeFilterPrefs(
+        includeUnknown = this[KEY_INCLUDE_UNKNOWN] ?: NodeFilterPrefs().includeUnknown,
+        excludeInfrastructure = this[KEY_EXCLUDE_INFRASTRUCTURE] ?: false,
+        onlyOnline = this[KEY_ONLY_ONLINE] ?: false,
+        onlyDirect = this[KEY_ONLY_DIRECT] ?: false,
+        showIgnored = this[KEY_SHOW_IGNORED] ?: false,
+        onlySigned = this[KEY_ONLY_SIGNED] ?: false,
+        onlyEncrypted = this[KEY_ONLY_ENCRYPTED] ?: false,
+        excludeMqtt = this[KEY_EXCLUDE_MQTT] ?: false,
+        excludeUnheard = this[KEY_EXCLUDE_UNHEARD] ?: false,
+    )
+
+    private fun MutablePreferences.writeNodeFilterPrefs(prefs: NodeFilterPrefs) {
+        this[KEY_INCLUDE_UNKNOWN] = prefs.includeUnknown
+        this[KEY_EXCLUDE_INFRASTRUCTURE] = prefs.excludeInfrastructure
+        this[KEY_ONLY_ONLINE] = prefs.onlyOnline
+        this[KEY_ONLY_DIRECT] = prefs.onlyDirect
+        this[KEY_SHOW_IGNORED] = prefs.showIgnored
+        this[KEY_ONLY_SIGNED] = prefs.onlySigned
+        this[KEY_ONLY_ENCRYPTED] = prefs.onlyEncrypted
+        this[KEY_EXCLUDE_MQTT] = prefs.excludeMqtt
+        this[KEY_EXCLUDE_UNHEARD] = prefs.excludeUnheard
+    }
+
+    companion object {
+        val KEY_HAS_SHOWN_NOT_PAIRED_WARNING_PREF = booleanPreferencesKey("has_shown_not_paired_warning")
+        val KEY_SHOW_QUICK_CHAT_PREF = booleanPreferencesKey("show-quick-chat")
+        val KEY_SHOW_FULL_MESSAGE_TIMESTAMPS = booleanPreferencesKey("show-full-message-timestamps")
+        val KEY_EVENT_THEME_ENABLED = booleanPreferencesKey("event-theme-enabled")
+
+        val KEY_APP_INTRO_COMPLETED = booleanPreferencesKey("app_intro_completed")
+        val KEY_THEME = intPreferencesKey("theme")
+        private val KEY_UNITS_OVERRIDE = intPreferencesKey("units_override")
+        val KEY_LOCALE = stringPreferencesKey("locale")
+        val KEY_NODE_SORT = intPreferencesKey("node-sort-option")
+        val KEY_CHIRPY_HOP_BEST_SCORE = intPreferencesKey("chirpy-hop-best-score")
+        val KEY_INCLUDE_UNKNOWN = booleanPreferencesKey("include-unknown")
+        val KEY_EXCLUDE_INFRASTRUCTURE = booleanPreferencesKey("exclude-infrastructure")
+        val KEY_ONLY_ONLINE = booleanPreferencesKey("only-online")
+        val KEY_ONLY_DIRECT = booleanPreferencesKey("only-direct")
+        val KEY_ONLY_SIGNED = booleanPreferencesKey("only-signed")
+        val KEY_ONLY_ENCRYPTED = booleanPreferencesKey("only-encrypted")
+        val KEY_SHOW_IGNORED = booleanPreferencesKey("show-ignored")
+        val KEY_EXCLUDE_MQTT = booleanPreferencesKey("exclude-mqtt")
+        val KEY_EXCLUDE_UNHEARD = booleanPreferencesKey("exclude-unheard")
+        val KEY_BLE_AUTO_SCAN = booleanPreferencesKey("ble-auto-scan")
+        val KEY_NETWORK_AUTO_SCAN = booleanPreferencesKey("network-auto-scan")
+        val KEY_SELECTED_CONNECTION_TRANSPORT = stringPreferencesKey("selected-connection-transport")
+        val KEY_FIRMWARE_UPDATE_NOTIFICATION_KEYS = stringPreferencesKey("firmware-update-notification-keys")
+        val KEY_SHOW_BLE_TRANSPORT = booleanPreferencesKey("show-ble-transport")
+        val KEY_SHOW_NETWORK_TRANSPORT = booleanPreferencesKey("show-network-transport")
+        val KEY_SHOW_USB_TRANSPORT = booleanPreferencesKey("show-usb-transport")
+        val KEY_KEPT_UNHEARD_NODES = stringPreferencesKey("kept-unheard-nodes")
+        private const val MAX_FIRMWARE_UPDATE_NOTIFICATION_KEYS = 100
+
+        // Kept nums leave only when heard again; this bounds the ones deleted from the DB while still kept.
+        private const val MAX_KEPT_UNHEARD_NODES = 1000
+        private const val SHOW_QUICK_CHAT_BY_DEFAULT = false
+
+        private fun parseDeviceType(name: String): DeviceType? = DeviceType.entries.firstOrNull { it.name == name }
+
+        private fun parseNodeNums(stored: String?): List<Int> =
+            stored?.split(',')?.mapNotNull(String::toIntOrNull)?.distinct().orEmpty()
+
+        private fun legacySelectedConnectionTransport(preferences: Preferences): DeviceType? {
+            val hasLegacyTransportPreference =
+                KEY_SHOW_BLE_TRANSPORT in preferences ||
+                    KEY_SHOW_NETWORK_TRANSPORT in preferences ||
+                    KEY_SHOW_USB_TRANSPORT in preferences
+            if (!hasLegacyTransportPreference) return null
+
+            val selected =
+                listOfNotNull(
+                    DeviceType.BLE.takeIf { preferences[KEY_SHOW_BLE_TRANSPORT] ?: true },
+                    DeviceType.TCP.takeIf { preferences[KEY_SHOW_NETWORK_TRANSPORT] ?: true },
+                    DeviceType.USB.takeIf { preferences[KEY_SHOW_USB_TRANSPORT] ?: true },
+                )
+            return selected.firstOrNull()
+        }
+    }
+}

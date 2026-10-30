@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Modified by MeshPlay on 2026-10-30 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Tic-tac-toe board -->
+    <path
+        android:pathData="M39,30L39,78"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <path
+        android:pathData="M63,30L63,78"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <path
+        android:pathData="M30,39L78,39"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <path
+        android:pathData="M30,63L78,63"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <!-- X in the top-left cell -->
+    <path
+        android:pathData="M27.5,27.5L38.5,38.5"
+        android:strokeColor="#67EA94"
+        android:strokeLineCap="round"
+        android:strokeWidth="5" />
+    <path
+        android:pathData="M27.5,38.5L38.5,27.5"
+        android:strokeColor="#67EA94"
+        android:strokeLineCap="round"
+        android:strokeWidth="5" />
+    <!-- O in the bottom-right cell -->
+    <path
+        android:pathData="M67.5,73a5.5,5.5 0 1 0 11,0a5.5,5.5 0 1 0 -11,0"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4" />
+</vector>

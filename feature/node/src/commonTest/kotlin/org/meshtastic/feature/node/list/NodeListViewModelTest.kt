@@ -1,0 +1,254 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.node.list
+
+import androidx.lifecycle.SavedStateHandle
+import app.cash.turbine.test
+import dev.mokkery.MockMode
+import dev.mokkery.answering.returns
+import dev.mokkery.every
+import dev.mokkery.matcher.any
+import dev.mokkery.mock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.meshtastic.core.common.util.MeasurementSystem
+import org.meshtastic.core.common.util.TemperatureUnit
+import org.meshtastic.core.model.ConnectionState
+import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.NodeSortOption
+import org.meshtastic.core.repository.ConnectionStateProvider
+import org.meshtastic.core.repository.NodeFilterPrefs
+import org.meshtastic.core.repository.NodeManager
+import org.meshtastic.core.repository.RadioConfigRepository
+import org.meshtastic.core.testing.FakeDeviceHardwareRepository
+import org.meshtastic.core.testing.FakeLocaleUnitsProvider
+import org.meshtastic.core.testing.FakeNodeRepository
+import org.meshtastic.core.testing.FakeRadioController
+import org.meshtastic.core.testing.FakeRadioInterfaceService
+import org.meshtastic.core.testing.FakeUiPrefs
+import org.meshtastic.core.testing.TestDataFactory
+import org.meshtastic.feature.node.detail.NodeManagementActions
+import org.meshtastic.feature.node.detail.NodeRequestActions
+import org.meshtastic.feature.node.domain.usecase.GetFilteredNodesUseCase
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class NodeListViewModelTest {
+
+    private lateinit var viewModel: NodeListViewModel
+    private lateinit var nodeRepository: FakeNodeRepository
+    private lateinit var radioController: FakeRadioController
+    private lateinit var radioInterfaceService: FakeRadioInterfaceService
+    private val radioConfigRepository: RadioConfigRepository = mock(MockMode.autofill)
+    private val connectionStateProvider: ConnectionStateProvider = mock(MockMode.autofill)
+    private val nodeFilterPreferences: NodeFilterPreferences = mock(MockMode.autofill)
+    private val nodeManager: NodeManager = mock(MockMode.autofill)
+    private val localeUnitsProvider = FakeLocaleUnitsProvider()
+    private val nodeManagementActions: NodeManagementActions = mock(MockMode.autofill)
+    private val nodeRequestActions: NodeRequestActions = mock(MockMode.autofill)
+    private val getFilteredNodesUseCase: GetFilteredNodesUseCase = mock(MockMode.autofill)
+
+    private val reportsHeard = MutableStateFlow(true)
+    private val nodeDbReady = MutableStateFlow(true)
+
+    @BeforeTest
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        nodeRepository = FakeNodeRepository()
+        radioController = FakeRadioController()
+        radioInterfaceService = FakeRadioInterfaceService()
+
+        every { radioConfigRepository.localConfigFlow } returns
+            MutableStateFlow(org.meshtastic.proto.LocalConfig.Builder().build())
+        every { radioConfigRepository.deviceProfileFlow } returns
+            MutableStateFlow(org.meshtastic.proto.DeviceProfile.Builder().build())
+        every { connectionStateProvider.connectionState } returns MutableStateFlow(ConnectionState.Disconnected)
+
+        every { nodeFilterPreferences.nodeSortOption } returns MutableStateFlow(NodeSortOption.LAST_HEARD)
+        every { nodeFilterPreferences.filters } returns MutableStateFlow(NodeFilterPrefs())
+        every { nodeFilterPreferences.keptUnheardNodes } returns MutableStateFlow(emptySet())
+        every { nodeManager.reportsHeardOnCurrentLora } returns reportsHeard
+        every { nodeManager.isNodeDbReady } returns nodeDbReady
+
+        every { getFilteredNodesUseCase(any(), any()) } returns MutableStateFlow(emptyList())
+        every { nodeRequestActions.lastTracerouteTime } returns MutableStateFlow(null)
+
+        viewModel = createViewModel()
+    }
+
+    @AfterTest
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    private fun createViewModel(prefs: NodeFilterPreferences = nodeFilterPreferences) = NodeListViewModel(
+        savedStateHandle = SavedStateHandle(),
+        nodeRepository = nodeRepository,
+        radioConfigRepository = radioConfigRepository,
+        connectionStateProvider = connectionStateProvider,
+        adminController = radioController,
+        radioInterfaceService = radioInterfaceService,
+        deviceHardwareRepository = FakeDeviceHardwareRepository(),
+        nodeManagementActions = nodeManagementActions,
+        nodeRequestActions = nodeRequestActions,
+        getFilteredNodesUseCase = getFilteredNodesUseCase,
+        nodeFilterPreferences = prefs,
+        nodeManager = nodeManager,
+        localeUnitsProvider = localeUnitsProvider,
+    )
+
+    @Test
+    fun testInitialization() {
+        assertNotNull(viewModel)
+    }
+
+    @Test
+    fun `nodeList emits updates when repository changes`() = runTest {
+        val nodesFlow = MutableStateFlow<List<Node>>(emptyList())
+        every { getFilteredNodesUseCase(any(), any()) } returns nodesFlow
+
+        val vm = createViewModel()
+        vm.nodeList.test {
+            // Initial value from stateIn
+            assertEquals(emptyList(), awaitItem())
+
+            // Trigger update
+            val testNodes = TestDataFactory.createTestNodes(3)
+            nodesFlow.value = testNodes
+
+            assertEquals(3, awaitItem().size)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /**
+     * The regression this guards: units used to be snapshotted at construction, so a user changing their regional
+     * preferences kept seeing the old ones until the screen was rebuilt.
+     */
+    @Test
+    fun `nodesUiState follows a mid-session units change`() = runTest {
+        val vm = createViewModel()
+        vm.nodesUiState.test {
+            val initial = awaitItem()
+            assertEquals(MeasurementSystem.METRIC, initial.distanceUnits)
+            assertEquals(false, initial.tempInFahrenheit)
+
+            // The provider exposes these as independent flows, so verify each transition without assuming atomicity.
+            localeUnitsProvider.set(system = MeasurementSystem.IMPERIAL)
+
+            val distanceUpdated = awaitItem()
+            assertEquals(MeasurementSystem.IMPERIAL, distanceUpdated.distanceUnits)
+            assertEquals(false, distanceUpdated.tempInFahrenheit)
+
+            localeUnitsProvider.set(temperature = TemperatureUnit.FAHRENHEIT)
+
+            val temperatureUpdated = awaitItem()
+            assertEquals(MeasurementSystem.IMPERIAL, temperatureUpdated.distanceUnits)
+            assertEquals(true, temperatureUpdated.tempInFahrenheit)
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `isActive is false for the default filter`() {
+        assertEquals(false, NodeFilterState().isActive)
+    }
+
+    @Test
+    fun `isActive is true when unknown nodes are opted out`() {
+        // includeUnknown defaults to true, so a persisted false is a user-applied narrowing filter.
+        assertEquals(true, NodeFilterState(includeUnknown = false).isActive)
+    }
+
+    @Test
+    fun `connectionState reflects serviceRepository state`() = runTest {
+        val stateFlow = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+        every { connectionStateProvider.connectionState } returns stateFlow
+
+        val vm = createViewModel()
+        vm.connectionState.test {
+            assertEquals(ConnectionState.Disconnected, awaitItem())
+            stateFlow.value = ConnectionState.Connected
+            assertEquals(ConnectionState.Connected, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    private fun unheardNode(num: Int) =
+        TestDataFactory.createTestNode(num = num, userId = "!0000000$num").copy(heardOnCurrentLora = false)
+
+    private fun seedUnheardNodes(vararg nums: Int) {
+        val ourNode = TestDataFactory.createTestNode(num = 99, userId = "!00000099")
+        nodeRepository.setOurNode(ourNode)
+        nodeRepository.setNodes(listOf(ourNode) + nums.map(::unheardNode))
+    }
+
+    @Test
+    fun `a kept node is no longer offered by the unheard banner`() = runTest {
+        val uiPrefs = FakeUiPrefs()
+        seedUnheardNodes(1, 2)
+        val vm = createViewModel(NodeFilterPreferences(uiPrefs))
+
+        vm.unheardBannerNodes.test {
+            assertEquals(listOf(1, 2), expectMostRecentItem().map { it.num })
+
+            vm.keepUnheardNodes(listOf(unheardNode(1)))
+            assertEquals(listOf(2), awaitItem().map { it.num })
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(setOf(1), uiPrefs.keptUnheardNodes.value)
+    }
+
+    @Test
+    fun `a kept node heard again leaves the kept set`() = runTest {
+        val uiPrefs = FakeUiPrefs()
+        seedUnheardNodes(1, 2)
+        createViewModel(NodeFilterPreferences(uiPrefs))
+        uiPrefs.keepUnheardNodes(setOf(1, 2))
+
+        nodeRepository.upsert(unheardNode(1).copy(heardOnCurrentLora = true))
+
+        assertEquals(setOf(2), uiPrefs.keptUnheardNodes.value)
+    }
+
+    @Test
+    fun `kept nodes are not pruned before the heard flags are authoritative`() = runTest {
+        val uiPrefs = FakeUiPrefs()
+        nodeDbReady.value = false
+        seedUnheardNodes(1)
+        createViewModel(NodeFilterPreferences(uiPrefs))
+        uiPrefs.keepUnheardNodes(setOf(1))
+
+        // A row left heard by an earlier session, before this session's NodeInfo install lands.
+        nodeRepository.upsert(unheardNode(1).copy(heardOnCurrentLora = true))
+        assertEquals(setOf(1), uiPrefs.keptUnheardNodes.value)
+
+        reportsHeard.value = false
+        nodeDbReady.value = true
+        assertEquals(setOf(1), uiPrefs.keptUnheardNodes.value)
+    }
+}

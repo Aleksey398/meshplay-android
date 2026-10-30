@@ -1,0 +1,170 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.buildlogic
+
+import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension
+import com.gradle.develocity.agent.gradle.test.DevelocityTestConfiguration
+import org.gradle.api.Project
+import org.gradle.api.artifacts.ExternalModuleDependencyBundle
+import org.gradle.api.artifacts.MinimalExternalModuleDependency
+import org.gradle.api.artifacts.VersionCatalog
+import org.gradle.api.artifacts.VersionCatalogsExtension
+import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.testing.AbstractTestTask
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.logging.TestLogEvent
+import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.getByType
+import org.gradle.kotlin.dsl.withType
+import org.gradle.plugin.use.PluginDependency
+import java.io.FileInputStream
+import java.time.Duration
+import java.util.Properties
+
+private const val MAX_TEST_RETRIES = 2
+private const val MAX_TEST_FAILURES = 10
+private const val TEST_TASK_TIMEOUT_MINUTES = 15L
+
+val Project.libs
+    get(): VersionCatalog = extensions.getByType<VersionCatalogsExtension>().named("libs")
+
+fun VersionCatalog.library(alias: String): Provider<MinimalExternalModuleDependency> = findLibrary(alias).get()
+
+fun VersionCatalog.bundle(alias: String): Provider<ExternalModuleDependencyBundle> = findBundle(alias).get()
+
+fun VersionCatalog.plugin(alias: String): Provider<PluginDependency> = findPlugin(alias).get()
+
+fun VersionCatalog.version(alias: String): String = findVersion(alias).get().requiredVersion
+
+val Project.configProperties: Properties
+    get() {
+        val key = "meshtastic.configProperties"
+        val ext = extensions.extraProperties
+        @Suppress("UNCHECKED_CAST")
+        if (ext.has(key)) return ext.get(key) as Properties
+        val properties = Properties()
+        val propertiesFile = isolated.rootProject.projectDirectory.file("config.properties").asFile
+        if (propertiesFile.exists()) {
+            FileInputStream(propertiesFile).use { properties.load(it) }
+        }
+        ext.set(key, properties)
+        return properties
+    }
+
+internal val Project.compileSdkMajor: Int
+    get() = configProperties.getProperty("COMPILE_SDK").toInt()
+
+internal val Project.compileSdkMinorLevel: Int
+    get() = configProperties.getProperty("COMPILE_SDK_MINOR", "0").toInt()
+
+/** Configure common test options like parallel execution and logging. */
+internal fun Project.configureTestOptions() {
+    // Only JUnit Platform test tasks need the launcher. Instrumented test APKs run under AndroidJUnitRunner, and a KMP
+    // device-test APK fails to dex and package the JUnit Platform jars.
+    configurations
+        .matching {
+            it.name.endsWith("TestRuntimeClasspath") &&
+                !it.name.contains("DeviceTest") &&
+                !it.name.contains("AndroidTest")
+        }
+        .configureEach {
+            val launcher = libs.library("junit-platform-launcher")
+            project.dependencies.add(name, launcher)
+        }
+
+    val isCi = providers.gradleProperty("ci").map { it.toBoolean() }.getOrElse(false)
+
+    // KMP androidHostTest (Robolectric) runs JUnit 4 natively; Platform there forces kotlin-test-junit5,
+    // which conflicts with the kotlin-test-junit that Kotlin selects for @RunWith tests.
+    pluginManager.withPlugin("com.android.kotlin.multiplatform.library") {
+        extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
+            onVariants { variant ->
+                variant.hostTests.values.forEach { hostTest -> hostTest.configureTestTask { test -> test.useJUnit() } }
+            }
+        }
+    }
+
+    tasks.withType<Test>().configureEach {
+        useJUnitPlatform()
+        // Parallelize unit tests at the Gradle fork level.
+        // In CI, use all available processors; locally use half to keep the machine responsive.
+        maxParallelForks =
+            if (isCi) {
+                Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            } else {
+                (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+            }
+        maxHeapSize = "2g"
+
+        // Keep forked test JVMs headless: Robolectric/Compose tests otherwise initialize
+        // AWT on macOS, spawning a Dock icon per fork and stealing window focus.
+        // apple.awt.UIElement covers anything that flips headless back off.
+        systemProperty("java.awt.headless", "true")
+        jvmArgs("-Dapple.awt.UIElement=true")
+
+        // JDK 24+ warns on every System.load from the class path (bundled SQLite, Skiko) unless native access is on.
+        jvmArgs("--enable-native-access=ALL-UNNAMED")
+        // Same for sun.misc.Unsafe memory access (JDK 24+), which datastore's bundled protobuf still uses.
+        jvmArgs("--sun-misc-unsafe-memory-access=allow")
+
+        // Numbers and units format in the OS locale, so the forked test JVMs are pinned to one: otherwise a
+        // contributor whose machine defaults to de-DE gets "0,0°C" and fails every test that pins "0.0°C".
+        // Locale-specific behaviour is asserted by tests that set the locale themselves.
+        systemProperty("user.language", "en")
+        systemProperty("user.country", "US")
+
+        // A hung test fails by name instead of running into the CI job timeout. SEPARATE_THREAD lets the timeout
+        // fire even when the stuck code never checks for interruption.
+        systemProperty("junit.jupiter.execution.timeout.default", "2 m")
+        systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD")
+        systemProperty("junit.jupiter.execution.timeout.mode", "disabled_on_debug")
+        // Backstop for JUnit 4 host tests, which Jupiter's timeout does not reach, and for a wedged test JVM.
+        timeout.set(Duration.ofMinutes(TEST_TASK_TIMEOUT_MINUTES))
+
+        // JUnit Jupiter parallel execution within each Gradle fork.
+        // Classes run sequentially ("same_thread") because 19+ ViewModel test classes use
+        // Dispatchers.setMain() — a JVM-global singleton that races when classes execute
+        // concurrently in the same JVM. Cross-module parallelism via Gradle forks (above)
+        // already provides the primary test speedup.
+        systemProperty("junit.jupiter.execution.parallel.enabled", "true")
+        systemProperty("junit.jupiter.execution.parallel.mode.default", "same_thread")
+        systemProperty("junit.jupiter.execution.parallel.mode.classes.default", "same_thread")
+        systemProperty("junit.jupiter.execution.parallel.config.strategy", "dynamic")
+        systemProperty("junit.jupiter.execution.parallel.config.dynamic.factor", "1")
+
+        // Allow modules with no discovered tests to pass without failing the build
+        filter { isFailOnNoMatchingTests = false }
+
+        // Show test results in the console
+        testLogging { events(TestLogEvent.PASSED, TestLogEvent.SKIPPED, TestLogEvent.FAILED) }
+    }
+
+    // Gradle 9+ fails when test sources exist but no test classes are discovered (e.g. all
+    // tests are commented out). Disable to avoid breaking builds for modules with WIP tests.
+    tasks.withType<AbstractTestTask>().configureEach { failOnNoDiscoveredTests.set(false) }
+
+    // Develocity-native test retry; findByType no-ops if the settings plugin isn't applied.
+    tasks.withType<Test>().configureEach {
+        extensions.findByType(DevelocityTestConfiguration::class.java)?.testRetry {
+            maxRetries.set(MAX_TEST_RETRIES)
+            maxFailures.set(MAX_TEST_FAILURES)
+            // Retry still isolates an ordering flake to one worker, but the build must not report success:
+            // a green tick over a recorded <failure> hid a real cross-test coroutine leak for weeks.
+            failOnPassedAfterRetry.set(true)
+        }
+    }
+}

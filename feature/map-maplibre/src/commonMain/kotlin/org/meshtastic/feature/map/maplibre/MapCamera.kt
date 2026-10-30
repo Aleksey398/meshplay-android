@@ -1,0 +1,73 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.map.maplibre
+
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.unit.LayoutDirection
+import org.maplibre.compose.camera.CameraAnimation
+import org.maplibre.compose.camera.CameraFit
+import org.maplibre.compose.camera.CameraPosition
+import org.maplibre.compose.camera.CameraUpdate
+import org.maplibre.compose.map.MapState
+import org.maplibre.compose.util.DpPadding
+import org.maplibre.spatialk.geojson.BoundingBox
+
+/**
+ * Steps the camera zoom by [delta], clamped to [range].
+ *
+ * Shared by the main map's toolbar and the node-track map's. MapLibre publishes no zoom ornament, so every map that
+ * wants buttons has to do this itself, and the clamp matters: pushing past a source's maximum zoom leaves the renderer
+ * with no tiles to draw.
+ *
+ * Every camera step here eases; a button press is a nudge, not a flight.
+ */
+internal suspend fun MapState.zoomBy(delta: Double, range: ClosedFloatingPointRange<Float>) {
+    val target = (cameraPosition.zoom + delta).coerceIn(range.start.toDouble(), range.endInclusive.toDouble())
+    if (target != cameraPosition.zoom) {
+        animateCamera(CameraUpdate(zoom = target), CameraAnimation.Ease.Standard)
+    }
+}
+
+/** One zoom level per button press, which is what both predecessors' zoom controls did. */
+internal const val ZOOM_STEP = 1.0
+
+/**
+ * Frames [bounds] without zooming past [FRAME_MAX_ZOOM]: the fit is computed first and capped before the camera moves,
+ * so nodes standing metres apart open on their surroundings rather than on empty tiles. Eased, not the default flight.
+ */
+internal suspend fun MapState.frameBounds(bounds: BoundingBox, padding: DpPadding = DpPadding.Zero) {
+    val fitted = cameraForBounds(bounds, CameraFit(fitPadding = padding))
+    animateCamera(fitted.cappedTo(FRAME_MAX_ZOOM).toCameraUpdate(), CameraAnimation.Ease.Standard)
+}
+
+/**
+ * These insets as the physical edges MapLibre takes. Resolving start and end here keeps the wide trailing inset on the
+ * zoom pair's side in RTL too.
+ */
+internal fun PaddingValues.toDpPadding(layoutDirection: LayoutDirection) = DpPadding(
+    left = calculateLeftPadding(layoutDirection),
+    top = calculateTopPadding(),
+    right = calculateRightPadding(layoutDirection),
+    bottom = calculateBottomPadding(),
+)
+
+/** This position, zoomed out to [maxZoom] if it is tighter than that. */
+internal fun CameraPosition.cappedTo(maxZoom: Double): CameraPosition =
+    if (zoom > maxZoom) copy(zoom = maxZoom) else this
+
+/** The zoom a map opens at on a single point of interest; framing a mesh never goes tighter than that. */
+internal const val FRAME_MAX_ZOOM = DETAIL_ZOOM

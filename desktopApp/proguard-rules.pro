@@ -1,0 +1,159 @@
+# ============================================================================
+# Meshtastic Desktop — ProGuard rules for release minification
+# ============================================================================
+# Open-source: obfuscation is OFF (build.gradle.kts: obfuscate.set(false)).
+# Tree-shaking still runs.
+#
+# Two rule sources are merged into the ProGuard run:
+#   1. JetBrains' bundled `default-compose-desktop-rules.pro` (auto-injected
+#      by the compose.desktop Gradle plugin).
+#   2. Cross-platform project keeps in config/proguard/shared-rules.pro,
+#      which inlines every dependency consumer rule we need on desktop —
+#      compose-jb's standalone ProGuard task does NOT auto-discover
+#      `META-INF/proguard/*.pro` consumer rules from dependency jars (only
+#      R8 on Android does — https://github.com/Guardsquare/proguard/issues/423).
+#
+# This file only holds desktop/JVM-specific rules that aren't covered above.
+# ============================================================================
+
+# ---- ProGuard 7.7 + Kotlin 2.3 metadata workaround --------------------------
+# ProGuard 7.7's KotlinShrinker NPEs on metadata produced by CMP 1.11 +
+# Kotlin 2.3.x. Because we don't obfuscate, class names stay stable and
+# metadata references remain valid without rewriting. Annotations themselves
+# are preserved by `-keepattributes *Annotation*` in shared-rules.pro.
+# (R8-only directive equivalent does not exist; this is ProGuard-only.)
+-dontprocesskotlinmetadata
+
+# ---- Disable optimizer (CMP 1.11 -assumenosideeffects defense) --------------
+# See shared-rules.pro for full rationale. Even though build.gradle.kts sets
+# `optimize.set(true)` so compose-jb wires the optimization step, this rule
+# turns it into a no-op — keeping CMP's `-assumenosideeffects` directives from
+# rewriting Composer call sites and freezing the runtime. See #5146.
+-dontoptimize
+
+# ---- Entry point ------------------------------------------------------------
+# Keep the desktop host shell (thin module — not worth tree-shaking).
+-keep class org.meshtastic.desktop.** { *; }
+
+# ---- JVM runtime suppression ------------------------------------------------
+-dontwarn java.lang.reflect.**
+-dontwarn sun.misc.Unsafe
+-dontwarn java.lang.invoke.**
+
+# ---- JNA (Java Native Access) — libnotify sender + kable's btleplug BLE bindings ---
+# JNA uses reflection to bind native methods; keep its core and callback classes.
+-keep class com.sun.jna.** { *; }
+-keep class com.sun.jna.ptr.** { *; }
+-dontwarn com.sun.jna.**
+
+# JNA callbacks are only ever invoked from native code, so the shrinker sees the
+# abstract methods as unused and empties the interface. JNA then can't resolve
+# the callback method and rejects the whole vtable Structure at <clinit>:
+#   IllegalArgumentException: Structure field "uniffiFree" was declared as
+#   ...UniffiCallbackInterfaceFree, which is not supported within a Structure
+# which killed BLE scanning in every packaged desktop build (#6553).
+-keep class * implements com.sun.jna.Callback { *; }
+-keep class * extends com.sun.jna.Structure { *; }
+
+# ---- dbus-java — Linux StatusNotifierItem tray (tray/SniTray.kt) -----------
+# The tray reaches D-Bus through reflection in three ways shrinking would break:
+#   * the Unix-socket transport is discovered only through ServiceLoader
+#     (META-INF/services/org.freedesktop.dbus.spi.transport.ITransportProvider ->
+#     org.freedesktop.dbus.transport.jre.NativeTransportProvider). Nothing
+#     references it statically, so the shrinker reads it as dead code and the
+#     connection then fails to open at all.
+#   * dbus-java builds each exported object's introspection from its interface
+#     methods, and reads struct members off @Position-annotated fields.
+#   * GetLayout's two out-arguments come from getGenericReturnType() on a generic
+#     Tuple, so the Signature attribute has to survive or dbus-java rejects
+#     DbusMenuLayout as a non-exportable type and the right-click menu dies.
+# Signature and *Annotation* are retained by shared-rules.pro's -keepattributes.
+# Do not narrow that list without re-testing a packaged release build's tray.
+# The tray's own interfaces are already covered by the org.meshtastic.desktop.**
+# keep above — in ProGuard, `-keep class` matches interfaces too.
+-keep class org.freedesktop.dbus.** { *; }
+-keep interface org.freedesktop.dbus.** { *; }
+-dontwarn org.freedesktop.dbus.**
+
+# ---- MapLibre's Panama FFI bindings - upcalls resolved by MethodHandle ------
+# Every callback maplibre-native makes back into Kotlin is an upcall stub built
+# from a MethodHandle the bindings look up by name at <clinit>: `upcallHandle`
+# findVirtual's "apply" on each `mln_*_callback$Function`, and each callback
+# *State class findVirtual's its own "invoke". Nothing calls either statically,
+# so the shrinker empties the nine interfaces and drops the four methods, and
+# the lookup fails on the first map composed:
+#   NoSuchMethodException: no such method: ...mln_log_callback$Function
+#   .apply(MemorySegment,int,int,long,MemorySegment)int/invokeInterface
+# rethrown as "Could not configure MapLibre's offline runtime" (#7286). Same
+# shape as the JNA callbacks above: a vtable only native code ever calls.
+#
+# Android binds through JavaCPP/JNI instead, and that AAR ships the consumer
+# rules R8 needs. The JVM bindings jar ships none.
+-keep class org.maplibre.nativeffi.** { *; }
+-keep interface org.maplibre.nativeffi.** { *; }
+
+# ---- Filament's Panama FFI bindings - the 3D device model viewer ------------
+# Same jextract shape as MapLibre above: each `Fila*Callback$Function` upcall
+# resolves "apply" by name, so the shrinker would strip it.
+-keep class io.github.erkko68.filament.ffm.** { *; }
+-keep interface io.github.erkko68.filament.ffm.** { *; }
+
+# ---- LWJGL - the map bridge's Vulkan, OpenGL and Direct3D bindings -----------
+# LWJGL picks its memory backend at <clinit> by walking a list of class names
+# (`MemoryBackendUnsafe*`, `MemoryBackendFFM*`) through Class.forName, and the
+# JDK 25 FFM backend lives under META-INF/versions/25. Nothing names either
+# statically, so the shrinker drops them all and MemoryUtil dies with
+#   java.lang.Error: Failed to initialize a backend for MemoryUtil
+# on the first map. The desktop map swallows that into a blank surface
+# (#7216, #7604). The versioned FFM layer stays out either way, so LWJGL runs
+# its Unsafe backend; this keeps that backend and the bindings it serves.
+-keep class org.lwjgl.** { *; }
+-keep interface org.lwjgl.** { *; }
+
+# ---- jSerialComm Android stubs (cross-platform serial library) --------------
+# jSerialComm bundles Android shims that reference android.* classes; harmless
+# on JVM/desktop but ProGuard fails the build on unresolved program classes
+# unless suppressed.
+-dontwarn com.fazecast.jSerialComm.android.**
+
+# Wire ships AndroidMessage in its common runtime; on desktop classpath there is
+# no android.os.Parcelable. We never use AndroidMessage on desktop.
+-dontwarn com.squareup.wire.AndroidMessage
+-dontwarn com.squareup.wire.AndroidMessage$*
+-dontwarn android.os.Parcelable
+-dontwarn android.os.Parcelable$*
+
+# Vico ships no consumer ProGuard rules. Without explicit keeps, ProGuard's
+# shrinker may remove "redundant" direct super-interfaces from class implements
+# lists (e.g. MeasuringContext from MutableCartesianMeasuringContext, since
+# CartesianMeasuringContext already extends it). This makes Kotlin-generated
+# invokespecial calls to interface default methods target an indirect
+# superinterface, which the JVM bytecode verifier rejects with:
+#   "Bad invokespecial instruction: interface method reference is in an
+#    indirect superinterface."
+# Keep the entire Vico package to prevent hierarchy restructuring.
+-keep class com.patrykandpatrick.vico.** { *; }
+-keep interface com.patrykandpatrick.vico.** { *; }
+-dontwarn com.patrykandpatrick.vico.compose.cartesian.ColorScaleShader
+-dontwarn com.patrykandpatrick.vico.compose.cartesian.layer.ColorScaleAreaFill
+-dontwarn com.patrykandpatrick.vico.compose.cartesian.layer.ColorScaleLineFill
+
+# ---- Kotlin 2.3+ stdlib intrinsics not present on JDK 17 --------------------
+-dontwarn kotlin.concurrent.atomics.**
+-dontwarn kotlin.uuid.UuidV7Generator
+
+# ---- BouncyCastle (per-install TAK server certificates) -----------------------
+# :core:takserver asks its private BouncyCastleProvider for PKCS12 and SHA256withRSA by
+# name; the provider loads those algorithm classes reflectively.
+-keep class org.bouncycastle.jcajce.provider.** { *; }
+-keep class org.bouncycastle.jce.provider.BouncyCastleProvider { *; }
+-dontwarn org.bouncycastle.**
+
+# ---- TAKPacket-SDK / proto ABI tolerance ------------------------------------
+# The SDK's TakPacketV2Serializer is compiled against atak.proto at a specific
+# commit. If the protobufs submodule advances ahead of the SDK release, minor
+# signature mismatches (e.g. optional field boxing) produce warnings. These are
+# harmless at runtime — affected code paths only execute when TAK packets use
+# the changed fields, and the SDK is rebuilt on each release. Suppress to avoid
+# blocking desktop builds while we coordinate proto alignment.
+-dontwarn org.meshtastic.tak.TakPacketV2Serializer

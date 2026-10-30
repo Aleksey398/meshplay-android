@@ -1,0 +1,86 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.service
+
+import android.annotation.SuppressLint
+import android.app.Application
+import co.touchlab.kermit.Logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import org.koin.core.annotation.Single
+import org.meshtastic.core.common.hasLocationPermission
+import org.meshtastic.core.repository.LocationRepository
+import org.meshtastic.core.repository.MeshLocationManager
+import org.meshtastic.proto.Position as ProtoPosition
+
+@Single
+class AndroidMeshLocationManager(private val context: Application, private val locationRepository: LocationRepository) :
+    MeshLocationManager {
+    private lateinit var scope: CoroutineScope
+    private var sendPositionFn: (suspend (ProtoPosition) -> Unit)? = null
+    private var locationFlow: Job? = null
+
+    @SuppressLint("MissingPermission")
+    override fun start(scope: CoroutineScope, sendPositionFn: suspend (ProtoPosition) -> Unit) {
+        this.scope = scope
+        this.sendPositionFn = sendPositionFn
+        if (locationFlow?.isActive == true) return
+
+        // Firmware stores this fix as the node's own position and rebroadcasts it at the channel's precision, which
+        // it stamps over any precision_bits sent here, so an approximate fix would go out claiming accuracy it lacks.
+        if (context.hasLocationPermission(precise = true)) {
+            locationFlow =
+                locationRepository
+                    .getLocations()
+                    .onEach { location ->
+                        sendPositionFn(
+                            phonePosition(
+                                latitude = location.latitude,
+                                longitude = location.longitude,
+                                timeMillis = location.timeMillis,
+                                mslAltitudeMeters = location.mslAltitudeMeters,
+                                haeAltitudeMeters = location.altitudeMeters,
+                                speedMetersPerSecond = location.speedMetersPerSecond,
+                                bearingDegrees = location.bearingDegrees,
+                            ),
+                        )
+                    }
+                    .launchIn(scope)
+        }
+    }
+
+    override fun restart() {
+        val fn = sendPositionFn
+        if (fn == null || !::scope.isInitialized) {
+            // start() hasn't been called yet — the connection manager wires us up on first myNodeInfo emission via
+            // the shouldProvideNodeLocation pref. Nothing to restart until that happens.
+            Logger.d { "restart() before start() — no-op until MeshConnectionManagerImpl wires location" }
+            return
+        }
+        start(scope, fn)
+    }
+
+    override fun stop() {
+        if (locationFlow?.isActive == true) {
+            Logger.i { "Stopping location requests" }
+            locationFlow?.cancel()
+            locationFlow = null
+        }
+    }
+}

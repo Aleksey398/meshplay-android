@@ -1,0 +1,409 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.ui.qr
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import org.meshtastic.core.model.Channel
+import org.meshtastic.core.model.schemaLabelRes
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.accept
+import org.meshtastic.core.resources.add
+import org.meshtastic.core.resources.add_channels_description
+import org.meshtastic.core.resources.cancel
+import org.meshtastic.core.resources.disabled
+import org.meshtastic.core.resources.enabled
+import org.meshtastic.core.resources.lora_config_change_value
+import org.meshtastic.core.resources.lora_config_changes
+import org.meshtastic.core.resources.new_channel_rcvd
+import org.meshtastic.core.resources.replace
+import org.meshtastic.core.resources.replace_channels_and_settings_description
+import org.meshtastic.core.resources.schema_lora_hop_limit
+import org.meshtastic.core.resources.schema_lora_modem_preset
+import org.meshtastic.core.resources.schema_lora_region
+import org.meshtastic.core.resources.schema_lora_use_preset
+import org.meshtastic.core.resources.unknown
+import org.meshtastic.core.ui.component.ChannelSelection
+import org.meshtastic.core.ui.theme.AppTheme
+import org.meshtastic.core.ui.util.getChannelPreviewForAdd
+import org.meshtastic.proto.ChannelSet
+
+@Composable
+fun ScannedQrCodeDialog(
+    incoming: ChannelSet,
+    onDismiss: () -> Unit,
+    viewModel: ScannedQrCodeViewModel = koinViewModel(),
+) {
+    val channels by viewModel.channels.collectAsStateWithLifecycle()
+    val maxChannels by viewModel.maxChannels.collectAsStateWithLifecycle()
+
+    ScannedQrCodeDialog(
+        channels = channels,
+        incoming = incoming,
+        onDismiss = onDismiss,
+        maxChannels = maxChannels,
+        onConfirm = viewModel::setChannels,
+    )
+}
+
+/** Enables the user to select which channels to accept after scanning a QR code. */
+@OptIn(ExperimentalLayoutApi::class)
+@Suppress("LongMethod", "CyclomaticComplexMethod")
+@Composable
+fun ScannedQrCodeDialog(
+    channels: ChannelSet,
+    incoming: ChannelSet,
+    onDismiss: () -> Unit,
+    maxChannels: Int = DEFAULT_MAX_CHANNELS,
+    onConfirm: (ChannelSet) -> Unit,
+) {
+    var shouldReplace by rememberSaveable { mutableStateOf(incoming.lora_config != null) }
+
+    // Freeze the channel limit for the dialog's lifetime so a late myNodeInfo emission (which updates
+    // viewModel.maxChannels from the DEFAULT_MAX_CHANNELS seed to the real device value) cannot rebuild
+    // addPreview/channelSelections and silently wipe the user's checkbox toggles.
+    val effectiveMaxChannels = rememberSaveable { maxChannels }
+
+    // Filtered ADD-mode preview: existing channels plus only the unique incoming channels. Duplicate incoming channels
+    // are omitted entirely. REPLACE mode ignores this and uses the raw incoming set.
+    val addPreview =
+        remember(channels.settings, incoming.settings, channels.lora_config, effectiveMaxChannels) {
+            getChannelPreviewForAdd(
+                existing = channels.settings,
+                incoming = incoming.settings,
+                loraConfig = channels.lora_config ?: Channel.default.loraConfig,
+                maxChannels = effectiveMaxChannels,
+            )
+        }
+
+    val channelSet =
+        remember(shouldReplace, channels, incoming, addPreview.settings) {
+            if (shouldReplace) {
+                // When replacing, apply the incoming LoRa configuration but preserve certain
+                // locally safe fields such as MQTT flags and TX power. This prevents QR codes
+                // from unintentionally overriding device-specific power limits (e.g. E22 caps).
+                incoming
+                    .newBuilder()
+                    .also { wb ->
+                        wb.lora_config =
+                            incoming.lora_config
+                                ?.newBuilder()
+                                ?.also { wb ->
+                                    wb.config_ok_to_mqtt = channels.lora_config?.config_ok_to_mqtt ?: false
+                                    wb.tx_power = channels.lora_config?.tx_power ?: 0
+                                }
+                                ?.build()
+                    }
+                    .build()
+            } else {
+                channels.newBuilder().also { wb -> wb.settings = addPreview.settings }.build()
+            }
+        }
+
+    val modemPresetName = Channel(loraConfig = channelSet.lora_config ?: Channel.default.loraConfig).name
+
+    /* Holds selections made by the user */
+    val channelSelections =
+        remember(shouldReplace, channelSet.settings, addPreview.selections) {
+            val defaults =
+                if (shouldReplace) {
+                    List(channelSet.settings.size) { true }
+                } else {
+                    addPreview.selections
+                }
+            mutableStateListOf<Boolean>().apply { addAll(defaults) }
+        }
+
+    val selectedChannelSet =
+        if (shouldReplace) {
+            channelSet
+                .newBuilder()
+                .also { wb ->
+                    wb.settings = channelSet.settings.filterIndexed { i, _ -> channelSelections.getOrNull(i) == true }
+                }
+                .build()
+        } else {
+            channelSet
+                .newBuilder()
+                .also { wb ->
+                    wb.settings =
+                        channelSet.settings.filterIndexed { i, _ ->
+                            // Primary (index 0) is always kept; existing secondaries can be dropped to free a slot for
+                            // the
+                            // incoming channel when the radio is full (Apple FR-017 "replace a secondary, never the
+                            // primary").
+                            i == 0 || channelSelections.getOrNull(i) == true
+                        }
+                }
+                .build()
+        }
+
+    // Compute LoRa configuration changes when in replace mode
+    val loraChanges =
+        remember(shouldReplace, channels, incoming) {
+            if (shouldReplace && incoming.lora_config != null) {
+                val current = channels.lora_config
+                val new = incoming.lora_config
+                buildList {
+                    if (current?.hop_limit != new?.hop_limit) {
+                        add(LoraConfigChange(Res.string.schema_lora_hop_limit, current?.hop_limit, new?.hop_limit))
+                    }
+                    if (current?.region != new?.region) {
+                        add(LoraConfigChange(Res.string.schema_lora_region, current?.region, new?.region))
+                    }
+                    if (current?.modem_preset != new?.modem_preset) {
+                        add(
+                            LoraConfigChange(
+                                Res.string.schema_lora_modem_preset,
+                                current?.modem_preset,
+                                new?.modem_preset,
+                            ),
+                        )
+                    }
+                    if (current?.use_preset != new?.use_preset) {
+                        add(LoraConfigChange(Res.string.schema_lora_use_preset, current?.use_preset, new?.use_preset))
+                    }
+                }
+            } else {
+                emptyList()
+            }
+        }
+
+    Dialog(
+        onDismissRequest = { onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true),
+    ) {
+        Surface(
+            modifier = Modifier.widthIn(max = 600.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.background,
+        ) {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                item {
+                    Text(
+                        text = stringResource(Res.string.new_channel_rcvd),
+                        modifier = Modifier.padding(20.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+
+                item {
+                    Text(
+                        text =
+                        stringResource(
+                            if (shouldReplace) {
+                                Res.string.replace_channels_and_settings_description
+                            } else {
+                                Res.string.add_channels_description
+                            },
+                        ),
+                        modifier = Modifier.padding(bottom = 16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+
+                itemsIndexed(channelSet.settings, key = { index, _ -> index }, contentType = { _, _ -> "channel" }) {
+                        index,
+                        channel,
+                    ->
+                    val isPrimary = index == 0
+                    val channelObj = Channel(channel, channelSet.lora_config ?: Channel.default.loraConfig)
+                    ChannelSelection(
+                        index = index,
+                        title = channel.name.ifEmpty { modemPresetName },
+                        // Primary is always kept. In ADD mode existing secondaries become deselectable so the user can
+                        // drop one to make room for the incoming channel on a full radio; REPLACE keeps its prior
+                        // all-selectable behavior.
+                        enabled = if (shouldReplace) true else !isPrimary,
+                        isSelected = if (!shouldReplace && isPrimary) true else channelSelections[index],
+                        onSelected = {
+                            if (it || selectedChannelSet.settings.size > 1) {
+                                channelSelections[index] = it
+                            }
+                        },
+                        channel = channelObj,
+                    )
+                }
+
+                // Display LoRa configuration changes when in replace mode
+                if (shouldReplace && loraChanges.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = stringResource(Res.string.lora_config_changes),
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        loraChanges.forEach { change ->
+                            val line =
+                                stringResource(
+                                    Res.string.lora_config_change_value,
+                                    stringResource(change.label),
+                                    loraConfigValueText(change.from),
+                                    loraConfigValueText(change.to),
+                                )
+                            Text(
+                                text = "• $line",
+                                modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Row(modifier = Modifier.padding(vertical = 20.dp)) {
+                        val selectedColors = ButtonDefaults.buttonColors()
+                        val unselectedColors =
+                            ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+
+                        val mediumHeight = ButtonDefaults.MediumContainerHeight
+                        OutlinedButton(
+                            onClick = { shouldReplace = false },
+                            shapes = ButtonDefaults.shapesFor(mediumHeight),
+                            modifier = Modifier.height(mediumHeight).weight(1f),
+                            colors = if (!shouldReplace) selectedColors else unselectedColors,
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.add),
+                                style = ButtonDefaults.textStyleFor(mediumHeight),
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = { shouldReplace = true },
+                            shapes = ButtonDefaults.shapesFor(mediumHeight),
+                            modifier = Modifier.height(mediumHeight).weight(1f),
+                            enabled = incoming.lora_config != null,
+                            colors = if (shouldReplace) selectedColors else unselectedColors,
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.replace),
+                                style = ButtonDefaults.textStyleFor(mediumHeight),
+                            )
+                        }
+                    }
+                }
+
+                /* User Actions via buttons */
+                item {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                    ) {
+                        TextButton(onClick = { onDismiss() }) {
+                            Text(
+                                text = stringResource(Res.string.cancel),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                onDismiss()
+                                onConfirm(selectedChannelSet)
+                            },
+                            enabled = selectedChannelSet.settings.size in 1..effectiveMaxChannels,
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.accept),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class LoraConfigChange(val label: StringResource, val from: Any?, val to: Any?)
+
+@Composable
+private fun loraConfigValueText(value: Any?): String = when (value) {
+    null -> stringResource(Res.string.unknown)
+    is Boolean -> stringResource(if (value) Res.string.enabled else Res.string.disabled)
+    is Enum<*> -> value.schemaLabelRes()?.let { stringResource(it) } ?: value.name
+    else -> value.toString()
+}
+
+@PreviewLightDark
+@Composable
+private fun ScannedQrCodeDialogPreview() {
+    AppTheme {
+        ScannedQrCodeDialog(
+            channels =
+            ChannelSet.Builder()
+                .also { wb ->
+                    wb.settings = listOf(Channel.default.settings)
+                    wb.lora_config = Channel.default.loraConfig
+                }
+                .build(),
+            incoming =
+            ChannelSet.Builder()
+                .also { wb ->
+                    wb.settings = listOf(Channel.default.settings)
+                    wb.lora_config = Channel.default.loraConfig
+                }
+                .build(),
+            onDismiss = {},
+            onConfirm = {},
+        )
+    }
+}

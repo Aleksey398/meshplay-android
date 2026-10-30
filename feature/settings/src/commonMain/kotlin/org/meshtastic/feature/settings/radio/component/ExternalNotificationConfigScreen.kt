@@ -1,0 +1,371 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.advanced
+import org.meshtastic.core.resources.external_notification
+import org.meshtastic.core.resources.external_notification_config
+import org.meshtastic.core.resources.notifications_on_alert_bell_receipt
+import org.meshtastic.core.resources.notifications_on_message_receipt
+import org.meshtastic.core.resources.ringtone
+import org.meshtastic.core.resources.schema_externalnotification_active
+import org.meshtastic.core.resources.schema_externalnotification_active_description
+import org.meshtastic.core.resources.schema_externalnotification_alert_bell
+import org.meshtastic.core.resources.schema_externalnotification_alert_bell_buzzer
+import org.meshtastic.core.resources.schema_externalnotification_alert_bell_buzzer_description
+import org.meshtastic.core.resources.schema_externalnotification_alert_bell_description
+import org.meshtastic.core.resources.schema_externalnotification_alert_bell_vibra
+import org.meshtastic.core.resources.schema_externalnotification_alert_bell_vibra_description
+import org.meshtastic.core.resources.schema_externalnotification_alert_message
+import org.meshtastic.core.resources.schema_externalnotification_alert_message_buzzer
+import org.meshtastic.core.resources.schema_externalnotification_alert_message_buzzer_description
+import org.meshtastic.core.resources.schema_externalnotification_alert_message_description
+import org.meshtastic.core.resources.schema_externalnotification_alert_message_vibra
+import org.meshtastic.core.resources.schema_externalnotification_alert_message_vibra_description
+import org.meshtastic.core.resources.schema_externalnotification_enabled
+import org.meshtastic.core.resources.schema_externalnotification_enabled_description
+import org.meshtastic.core.resources.schema_externalnotification_nag_timeout
+import org.meshtastic.core.resources.schema_externalnotification_nag_timeout_description
+import org.meshtastic.core.resources.schema_externalnotification_output
+import org.meshtastic.core.resources.schema_externalnotification_output_buzzer
+import org.meshtastic.core.resources.schema_externalnotification_output_buzzer_description
+import org.meshtastic.core.resources.schema_externalnotification_output_description
+import org.meshtastic.core.resources.schema_externalnotification_output_ms
+import org.meshtastic.core.resources.schema_externalnotification_output_ms_description
+import org.meshtastic.core.resources.schema_externalnotification_output_vibra
+import org.meshtastic.core.resources.schema_externalnotification_output_vibra_description
+import org.meshtastic.core.resources.schema_externalnotification_use_i2s_as_buzzer
+import org.meshtastic.core.resources.schema_externalnotification_use_i2s_as_buzzer_description
+import org.meshtastic.core.resources.schema_externalnotification_use_pwm
+import org.meshtastic.core.resources.schema_externalnotification_use_pwm_description
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.FixedOutputDurations
+import org.meshtastic.feature.settings.util.IntervalConfiguration
+import org.meshtastic.feature.settings.util.toDisplayString
+import org.meshtastic.proto.ModuleConfig
+
+private const val MAX_RINGTONE_SIZE = 230
+
+@Composable
+expect fun RingtoneTrailingIcon(ringtoneInput: String, onRingtoneImported: (String) -> Unit, enabled: Boolean)
+
+@Suppress("LongMethod", "TooGenericExceptionCaught")
+@Composable
+fun ExternalNotificationConfigScreenCommon(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: RadioConfigViewModel,
+) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val extNotificationConfig =
+        state.moduleConfig.external_notification ?: ModuleConfig.ExternalNotificationConfig.Builder().build()
+    val ringtone = state.ringtone
+    val formState = rememberConfigState(initialValue = extNotificationConfig)
+    var ringtoneInput by rememberSaveable(ringtone) { mutableStateOf(ringtone) }
+    val focusManager = LocalFocusManager.current
+
+    RadioConfigScreenList(
+        modifier = modifier,
+        title = stringResource(Res.string.external_notification),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        additionalDirtyCheck = { ringtoneInput != ringtone },
+        onDiscard = { ringtoneInput = ringtone },
+        onSave = {
+            if (ringtoneInput != ringtone) {
+                viewModel.setRingtone(ringtoneInput)
+            }
+            if (formState.value != extNotificationConfig) {
+                val config = ModuleConfig.Builder().also { wb -> wb.external_notification = formState.value }.build()
+                viewModel.setModuleConfig(config)
+            }
+        },
+    ) {
+        val cards =
+            ArrayDeque(
+                partitionFieldKeys(
+                    SettingsSearchCatalog.fieldKeys(ModuleRoute.EXT_NOTIFICATION.route),
+                    "schema_externalnotification_",
+                    listOf("alert_message", "alert_message_buzzer", "alert_message_vibra"),
+                    listOf("alert_bell", "alert_bell_buzzer", "alert_bell_vibra"),
+                    listOf(
+                        "output",
+                        "active",
+                        "output_buzzer",
+                        "use_pwm",
+                        "output_vibra",
+                        "output_ms",
+                        "nag_timeout",
+                        "use_i2s_as_buzzer",
+                    ),
+                ),
+            )
+        fieldItem(cards.removeFirst()) {
+            TitledCard(title = stringResource(Res.string.external_notification_config)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_enabled),
+                    summary = stringResource(Res.string.schema_externalnotification_enabled_description),
+                    checked = formState.value.enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+
+        fieldItem(cards.removeFirst()) {
+            TitledCard(title = stringResource(Res.string.notifications_on_message_receipt)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_alert_message),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_alert_message),
+                    summary = stringResource(Res.string.schema_externalnotification_alert_message_description),
+                    checked = formState.value.alert_message,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.alert_message = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_alert_message_buzzer),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_alert_message_buzzer),
+                    summary = stringResource(Res.string.schema_externalnotification_alert_message_buzzer_description),
+                    checked = formState.value.alert_message_buzzer,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.alert_message_buzzer = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_alert_message_vibra),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_alert_message_vibra),
+                    summary = stringResource(Res.string.schema_externalnotification_alert_message_vibra_description),
+                    checked = formState.value.alert_message_vibra,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.alert_message_vibra = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+
+        fieldItem(cards.removeFirst()) {
+            TitledCard(title = stringResource(Res.string.notifications_on_alert_bell_receipt)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_alert_bell),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_alert_bell),
+                    summary = stringResource(Res.string.schema_externalnotification_alert_bell_description),
+                    checked = formState.value.alert_bell,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.alert_bell = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_alert_bell_buzzer),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_alert_bell_buzzer),
+                    summary = stringResource(Res.string.schema_externalnotification_alert_bell_buzzer_description),
+                    checked = formState.value.alert_bell_buzzer,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.alert_bell_buzzer = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_alert_bell_vibra),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_alert_bell_vibra),
+                    summary = stringResource(Res.string.schema_externalnotification_alert_bell_vibra_description),
+                    checked = formState.value.alert_bell_vibra,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.alert_bell_vibra = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+
+        fieldItem(cards.removeFirst()) {
+            TitledCard(title = stringResource(Res.string.advanced)) {
+                val gpio = remember { org.meshtastic.feature.settings.util.gpioPins }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_externalnotification_output),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_output),
+                    summary = stringResource(Res.string.schema_externalnotification_output_description),
+                    items = gpio,
+                    selectedItem = formState.value.output.toLong(),
+                    enabled = state.connected,
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.output = it.toInt() }.build()
+                    },
+                )
+                if (formState.value.output != 0) {
+                    HorizontalDivider()
+                    SwitchPreference(
+                        title = stringResource(Res.string.schema_externalnotification_active),
+                        modifier = Modifier.settingsField(Res.string.schema_externalnotification_active),
+                        summary = stringResource(Res.string.schema_externalnotification_active_description),
+                        checked = formState.value.active,
+                        enabled = state.connected,
+                        onCheckedChange = {
+                            formState.value = formState.value.newBuilder().also { wb -> wb.active = it }.build()
+                        },
+                        containerColor = CardDefaults.cardColors().containerColor,
+                    )
+                }
+                HorizontalDivider()
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_externalnotification_output_buzzer),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_output_buzzer),
+                    summary = stringResource(Res.string.schema_externalnotification_output_buzzer_description),
+                    items = gpio,
+                    selectedItem = formState.value.output_buzzer.toLong(),
+                    enabled = state.connected,
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.output_buzzer = it.toInt() }.build()
+                    },
+                )
+                if (formState.value.output_buzzer != 0) {
+                    HorizontalDivider()
+                    SwitchPreference(
+                        title = stringResource(Res.string.schema_externalnotification_use_pwm),
+                        modifier = Modifier.settingsField(Res.string.schema_externalnotification_use_pwm),
+                        summary = stringResource(Res.string.schema_externalnotification_use_pwm_description),
+                        checked = formState.value.use_pwm,
+                        enabled = state.connected,
+                        onCheckedChange = {
+                            formState.value = formState.value.newBuilder().also { wb -> wb.use_pwm = it }.build()
+                        },
+                        containerColor = CardDefaults.cardColors().containerColor,
+                    )
+                }
+                HorizontalDivider()
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_externalnotification_output_vibra),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_output_vibra),
+                    summary = stringResource(Res.string.schema_externalnotification_output_vibra_description),
+                    items = gpio,
+                    selectedItem = formState.value.output_vibra.toLong(),
+                    enabled = state.connected,
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.output_vibra = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                val outputItems = remember { FixedOutputDurations.allowed }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_externalnotification_output_ms),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_output_ms),
+                    summary = stringResource(Res.string.schema_externalnotification_output_ms_description),
+                    items = outputItems.map { it.value to it.toDisplayString() },
+                    selectedItem = formState.value.output_ms.toLong(),
+                    enabled = state.connected,
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.output_ms = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                val nagItems = remember { IntervalConfiguration.NAG_TIMEOUT.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_externalnotification_nag_timeout),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_nag_timeout),
+                    summary = stringResource(Res.string.schema_externalnotification_nag_timeout_description),
+                    items = nagItems.map { it.value to it.toDisplayString() },
+                    selectedItem = formState.value.nag_timeout.toLong(),
+                    enabled = state.connected,
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.nag_timeout = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                EditTextPreference(
+                    title = stringResource(Res.string.ringtone),
+                    value = ringtoneInput,
+                    maxSize = MAX_RINGTONE_SIZE,
+                    enabled = state.connected,
+                    isError = false,
+                    keyboardOptions =
+                    KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = { ringtoneInput = it },
+                    trailingIcon = {
+                        RingtoneTrailingIcon(
+                            ringtoneInput = ringtoneInput,
+                            onRingtoneImported = { ringtoneInput = it },
+                            enabled = state.connected,
+                        )
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_externalnotification_use_i2s_as_buzzer),
+                    modifier = Modifier.settingsField(Res.string.schema_externalnotification_use_i2s_as_buzzer),
+                    summary = stringResource(Res.string.schema_externalnotification_use_i2s_as_buzzer_description),
+                    checked = formState.value.use_i2s_as_buzzer,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.use_i2s_as_buzzer = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+    }
+}

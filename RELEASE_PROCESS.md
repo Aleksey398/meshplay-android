@@ -1,0 +1,178 @@
+# Meshtastic Release Process
+
+This guide summarizes the steps for releasing new versions of Meshtastic Android and Desktop. The core flow is automated once a developer triggers the **Create or Promote Release** workflow; Microsoft Store and winget publishing run as separate workflows (see Desktop Store Publishing).
+
+## Overview
+
+The entire release process is managed by a single GitHub Action: **`Create or Promote Release`**.
+
+-   **Trigger:** To start a new release or promote an existing one, a developer runs the workflow from the GitHub Actions tab.
+-   **Inputs:** The workflow requires the following inputs:
+    1.  `base_version`: The base version number you are releasing (e.g., `2.8.0`). It must be `X.Y.Z` and equal `VERSION_NAME_BASE` in `config.properties` at the commit being released (`HEAD` for an internal cut, the promoted tag's commit for a promotion), or the run stops before any tag is pushed.
+    2.  `channel`: The release channel you are targeting (`internal`, `closed`, `open`, or `production`).
+    3.  `dry_run`: If `true`, calculates the tag but does not push it or start the release (default: `false`).
+    4.  `no_review_in_flight`: **Promotions only, and a hard gate.** Before promoting, check
+        Play Console → Publishing overview → Submission activity; if anything reads "In
+        review", wait. Tick this box to confirm — the workflow fails without it, because
+        each promotion creates a new Play submission that *cancels and restarts* any review
+        already in flight. Internal releases and dry runs are exempt (Play internal testing
+        skips full review).
+-   **Automation:** The workflow handles everything automatically:
+    -   **Generates Changelog:** Categorizes merged PRs by their labels (per `.github/release.yml`) into GitHub's auto-generated release notes. The internal draft's notes cover the PRs since the newest published release, pre-release or production; a production promotion rewrites them over the whole range since the previous production tag, with the metainfo `<description>` for the version as a Highlights section on top, and opens a PR folding the same notes into `CHANGELOG.md`. Every internal, closed and open run ends by dispatching the `Update Changelog` workflow, which refreshes that file's `[Unreleased]` section through its own PR. Every PR the release automation opens (these two, the screenshot refresh and the version bump) goes through `.github/actions/bot-pr` with `CROWDIN_GITHUB_TOKEN`, so it runs the normal PR checks and merges itself through the queue once they pass.
+    -   **Tags & Builds** *(internal releases)*: Pushes the incremental tag first — there is no lint/test gate in this workflow, that's the separate PR/CI pipeline — then builds the Android bundle/APK and Desktop installers from that tag; if the build fails, an automatic cleanup job deletes the tag so a retry starts clean. Once `publish-play` has uploaded the bundle the tag stays, since Play keeps that versionCode; re-run the failed jobs instead. Promotions skip this entirely and retag the already-built artifact (see below).
+    -   **Deploys Android:** Uploads the build to the correct Google Play track and attaches artifacts (`.aab`/`.apk`) to a GitHub Release. An internal cut sends the bundle to Play only after every Android, desktop and Flatpak leg has built, so a failed leg and its deleted tag leave nothing on Play. Each promotion also uploads the Play "What's new" text for every locale from `fastlane/metadata/android/<locale>/changelogs/default.txt`, which `scripts/sync-play-changelog.py` renders from the metainfo `<description>` and Crowdin translates.
+    -   **Captures the store screenshots** *(internal releases)*: `store-screenshots.yml` runs the real debug apps from the tag, connected to Demo Mode's showcase mesh, on one emulator per flavor and on a virtual display for desktop, and attaches `store-listing-screenshots-google-<versionCode>.zip`, `store-listing-screenshots-fdroid-<versionCode>.zip` and the five desktop PNGs to the draft once it exists, so the draft does not wait on the capture. A set with a shot missing is replaced whole by the committed one, so the metainfo's screenshot URLs still resolve, and the job summary says which set went up. A failed capture never fails the release.
+    -   **Publishes the Play listing:** every promotion runs the `play_listing` lane with the tag's text for every locale and the google-flavor screenshots attached to the release (the committed set when none are attached), as a dry run on closed and open and for real on production, held as "changes not sent for review". Production also opens a self-merging PR that writes the fdroid-flavor screenshots back into `fastlane/`, which F-Droid and IzzyOnDroid read from git, and the desktop set into `desktopApp/packaging/linux/screenshots/`.
+    -   **Publishes docs:** Every promotion dispatches `docs-release.yml` on the new tag (the tag is created with `GITHUB_TOKEN`, so its tag trigger never fires on its own).
+    -   **Refreshes the Obtainium table:** Every promotion dispatches `scheduled-updates.yml` once the release is published, so the Obtainium table in `README.md` follows it without waiting for the scheduled run.
+    -   **Writes a checklist:** The promotion run's summary lists what it did, what it dispatched, and what is still done by hand. winget, the Microsoft Store, Homebrew and Flathub each read "will skip: `<SECRET>` unset" when their secret is missing, since those workflows and jobs then submit nothing.
+    -   **Reruns:** Re-running a failed `update-github-release` job finds the release under its final tag when the first attempt already moved it, and updates the bot PRs in place; its workflow dispatches run again. The Discord announcement goes out whenever the release step succeeded, whatever failed after it.
+    -   **Deploys Desktop** *(internal releases)*: Builds native installers (DMG, MSI, EXE, DEB, RPM, AppImage) and Flatpak sources on a matrix of runners and attaches them to the GitHub Release.
+-   **Changelog:** Both the GitHub Release notes and `CHANGELOG.md` are generated from merged PR labels, not raw commit messages — label PRs correctly (`enhancement`, `bugfix`, etc.) to keep them accurate. `pull-request-target.yml` sets the label from the PR's branch prefix and conventional-commit title, so a wrong label usually means a wrong prefix.
+-   **Not part of this workflow:** Firmware/hardware/device-links lists and Crowdin translations are kept current by a separate scheduled workflow, `scheduled-updates.yml` ("Scheduled Updates (Firmware, Hardware, Translations)"), which opens its own PR rather than committing directly and enables auto-merge on it, so it lands through the merge queue once its checks pass. A promotion dispatches it (above) without waiting on it. `VERSION_NAME_BASE` in `config.properties` moves to the next patch version after each production release: `promote.yml` dispatches `version-bump.yml`, which runs `scripts/bump-version-name.py` and opens a self-merging PR carrying the new `<release>` entry in `desktopApp/packaging/linux/org.meshtastic.MeshtasticDesktop.metainfo.xml`, its five `<image>` URLs moved to `releases/download/v<version>/`, and `fastlane/metadata/android/en-US/changelogs/default.txt` rendered from that entry. `pull-request.yml` fails a bump PR missing any of them; the bot PR is opened with `CROWDIN_GITHUB_TOKEN`, so those checks run on it and the merge queue takes it. The entry's paragraph is a placeholder; replace it and re-run `scripts/sync-play-changelog.py` before the next internal cut, because it becomes the release Highlights and Play's "What's new". A minor or major line is a hand PR running the same script, and the workflow skips when `main` is already past the shipped version. `Create or Promote Release` only *reads* `config.properties` at the commit being released: `VERSION_NAME_BASE` must match `base_version`, and `VERSION_CODE_OFFSET` plus that commit's count gives the build's version code.
+
+## Release Steps
+
+### 1. Start an Internal Release
+
+1.  Navigate to the **Actions** tab in the GitHub repository.
+2.  Select the **`Create or Promote Release`** workflow.
+3.  Click the **"Run workflow"** dropdown.
+4.  Enter the `base_version` (e.g., `2.8.0`).
+5.  Select the `internal` channel.
+6.  Click **"Run workflow"**. (Tip: enable `dry_run` first to preview the tag that would be created without pushing anything.)
+
+The workflow will:
+1.  **Tag** the current commit on the branch with an incremental internal tag (e.g., `v2.8.0-internal.1`) — no new commit is created; it tags whatever is already at `HEAD`.
+2.  **Build** the Android bundle and APKs, and the desktop installers and Flatpak sources on macOS, Windows, and Linux runners.
+3.  **Deploy** the Android bundle to the Play Store Internal track once every build has succeeded.
+4.  Publish a **draft** pre-release on GitHub with all artifacts attached; the store screenshots follow when the capture finishes. It stays a draft until
+    the first promotion (closed/open/production), at which point `promote.yml` un-drafts the
+    *same* release object (retagging it to the new channel's tag) rather than creating a new one.
+
+### 2. Promote to the Next Channel
+
+Once an internal build has been verified, you can promote it to a wider audience.
+
+1.  Run the **`Create or Promote Release`** workflow again with the same `base_version`.
+2.  Select the next channel in the sequence (e.g., `closed`, then `open`).
+3.  The workflow will create a new incremental tag for that channel (e.g., `v2.8.0-closed.1`) and create a **published** pre-release on GitHub.
+
+### 3. Promote to Production
+
+After testing is complete on all pre-release channels, you can create the final public release.
+
+1.  Run the **`Create or Promote Release`** workflow one last time.
+2.  Use the same `base_version`.
+3.  Select the `production` channel.
+4.  The workflow will create a clean version tag (e.g., `v2.8.0`) and create a **published, stable** (non-prerelease) release on GitHub.
+
+### 4. Post-Release
+
+Start from the promotion run's summary: it lists what the run did and dispatched, and what
+remains by hand.
+
+1.  **Verify Android:** Check the Google Play Console to ensure the build is available on the correct track. A production promotion starts a staged rollout at 10% (open at 50%); widen, complete or halt it with the **`Play Rollout`** workflow (see Staged Rollout below).
+2.  **Verify Desktop:** Download and smoke-test at least one installer (DMG, MSI, or AppImage) from the GitHub Release.
+3.  **Verify the desktop store submissions** *(production only — see below)*: the Microsoft Store
+    submission in Partner Center, and the pull request opened against `microsoft/winget-pkgs`.
+    Each store workflow warns in its summary when its secrets are not set and it submitted nothing,
+    and the promotion checklist already says so.
+4.  **Flathub** *(production only)*: merge the `update-flathub` PR in `flathub/org.meshtastic.MeshtasticDesktop` once Flathub's test build passes, or bump it by hand when `FLATHUB_TOKEN` is unset (see Flatpak below).
+5.  **Post-Release Cleanup** *(production only)*: `Docs Release` dispatches `post-release-cleanup.yml` with `confirm_deletion: true` once it has published `/vX.Y.Z/`, deleting the pre-releases, tags and docs snapshots at or below `X.Y.Z` and every production docs copy older than the newest one below `X.Y.Z`. Check that run; a manual dispatch is the retry and defaults to a dry run.
+6.  **Next version line** *(production only)*: the `version-bump.yml` PR bumps `VERSION_NAME_BASE` and merges itself. Replace its placeholder `<description>` before the next internal cut.
+7.  **Merge:** If a `release/*` branch was used for stabilization (CI runs the same PR checks
+    against PRs targeting `release/**` as it does for `main`), merge it back into `main` now
+    that production has shipped.
+
+### Staged Rollout
+
+**`Play Rollout`** (`play-rollout.yml`) changes the one `inProgress` release on the `production`
+or `beta` track. Its inputs are the `track`, an `action` and, for `rollout`, a `fraction`:
+
+| Action | Effect |
+|---|---|
+| `rollout` | Widens the release to `fraction`, which must be above the current fraction and below 1 |
+| `complete` | Ships the release to every user |
+| `halt` | Stops the rollout at its current fraction |
+
+It carries the same `no_review_in_flight` gate as a promotion, because a committed change
+cancels and restarts any review in flight. It runs in its own concurrency group, not
+`Create or Promote Release`'s, since a group keeps one pending run and a rollout queued there
+would cancel a pending promotion. The run stops without
+changing anything unless the track holds exactly one `inProgress` release, and it verifies the
+new status and fraction on the track afterwards. A halted release is resumed or completed in the
+Play Console, since `supply` only acts on `inProgress` releases. When Play will not send a change
+for review on its own, the change waits under Publishing overview in the Play Console.
+
+### Desktop Store Publishing (production only)
+
+Publishing a **production** release also fires two workflows, both keyed on the GitHub
+`release: released` event:
+
+| Workflow | Target | Credentials |
+|---|---|---|
+| `msstore-publish.yml` | Microsoft Store, via the Partner Center API using the MSStore CLI | `MSSTORE_*` secrets |
+| `winget-publish.yml` | A PR against `microsoft/winget-pkgs` | `WINGET_TOKEN` PAT |
+
+Neither fires for drafts or pre-releases, so internal/closed/open promotions are ignored.
+`released` also fires when `promote.yml` flips an existing pre-release to a full release — but
+because that edit uses the workflow's own `GITHUB_TOKEN`, and events caused by `GITHUB_TOKEN`
+never start workflow runs, `promote.yml` dispatches both workflows explicitly as well. Each also
+accepts a manual `workflow_dispatch` with a `tag`, which is the retry path if either fails.
+
+## Desktop Release Details
+
+Desktop native installers are built automatically as part of every `internal` release. There is no separate promotion flow for Desktop — installers are built once during the `internal` release and attached to the GitHub Release alongside Android artifacts; promotions to later channels reuse them.
+
+### Artifacts Produced
+
+| Platform | Format | Runner |
+|---|---|---|
+| macOS | `.dmg` | `macos-latest` |
+| Windows | `.msi`, `.exe` | `windows-latest` |
+| Linux (x86_64) | `.deb`, `.rpm`, `.AppImage` | `ubuntu-24.04` |
+| Linux (ARM64) | `.deb`, `.rpm`, `.AppImage` | `ubuntu-24.04-arm` |
+
+### macOS Code Signing & Notarization
+
+macOS builds are signed and notarized when the following CI secrets are configured:
+
+| Secret | Source |
+|---|---|
+| `APPLE_SIGNING_IDENTITY` | Developer ID Application certificate (from Apple Developer account) |
+| `APPLE_ID` | Apple ID email used for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from [appleid.apple.com](https://appleid.apple.com) |
+| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+
+Without these secrets, macOS builds are produced unsigned. Unsigned DMGs will trigger Gatekeeper warnings on end-user machines. The DMG is built on an Apple silicon runner only, so there is no Intel macOS build.
+
+### Windows Code Signing
+
+The Windows `.msi` and `.exe` installers are Authenticode-signed through Azure Trusted Signing (Artifact Signing) when these CI secrets are configured:
+
+| Secret | Source |
+|---|---|
+| `AZURE_TENANT_ID` | Entra tenant ID |
+| `AZURE_CLIENT_ID` | Client ID of the app registration (service principal) |
+| `AZURE_CLIENT_SECRET` | Client secret for that app registration |
+| `AZURE_TRUSTED_SIGNING_ENDPOINT` | Account endpoint, for example `https://eus.codesigning.azure.net` |
+| `AZURE_TRUSTED_SIGNING_ACCOUNT` | Trusted Signing account name |
+| `AZURE_TRUSTED_SIGNING_CERT_PROFILE` | Public-trust certificate profile name |
+
+The service principal needs the "Trusted Signing Certificate Profile Signer" role on the account. Without the endpoint secret the installers ship unsigned; with it set and another secret missing, the signing step fails the build. Only the installers are signed, not the launcher `.exe` inside them.
+
+### Version Alignment
+
+Desktop uses the same version resolution chain as Android (`resolveVersionInfo` in `build-logic`): both fall back to `VERSION_NAME_BASE` and the commit count plus `VERSION_CODE_OFFSET` from `config.properties`, and CI passes in the resolved name and code, as `-Pandroid.injected.version.*` for Android and as `appVersionName` and `VERSION_CODE` for desktop. Desktop version names are sanitized to strict `X.Y.Z` format for native installer compatibility.
+
+### Flatpak
+
+Flatpak packaging is maintained externally at [flathub/org.meshtastic.MeshtasticDesktop](https://github.com/flathub/org.meshtastic.MeshtasticDesktop). It builds `:desktopApp:packageUberJarForCurrentOS` (not the native distribution pipeline) and handles JBR bundling; the AppStream metainfo and `.desktop` entry it installs come from this repo, out of the tag it builds. So the `<release>` notes ship with the tag, and the `<screenshot>` URLs name the desktop PNGs the internal cut attached to that version's release (`releases/download/v<version>/`), which Flathub's guidelines allow and a branch link would not. A production promotion's `update-flathub` job opens the bump PR with `FLATHUB_TOKEN`, and skips with a notice when that secret is unset. The PR moves four things together: the tag and commit, the Gradle distribution zip URL and sha256 (from the tag's `gradle/wrapper/gradle-wrapper.properties`), and the release's `flatpak-sources.json` asset. `scripts/verify-flatpak/bump-flathub-manifest.py` rewrites those manifest fields in place and fails, leaving the bump to be done by hand, when any of them no longer matches exactly once. The JBR, the runtime and the patches are left alone; Flathub's test build on the PR checks them against the tag. flathubbot's zip-bump PRs follow the latest Gradle rather than the tag's wrapper and fail their test build; close them rather than merge them. The offline-build sources it consumes are captured in-repo by `scripts/verify-flatpak/` (see its README), and `verify-flatpak.yml` builds them offline nightly and on changes to that directory, the workflow or the Gradle wrapper.
+
+## Build Attestations & Provenance
+
+All release artifacts are accompanied by explicit GitHub build attestations (provenance). This provides cryptographic proof that the artifacts were built by our trusted GitHub Actions workflow, ensuring supply chain integrity.
+
+-   You can view and verify provenance in the GitHub UI under each release asset.
+-   For more details, see [GitHub's documentation on build provenance](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#provenance-attestations).

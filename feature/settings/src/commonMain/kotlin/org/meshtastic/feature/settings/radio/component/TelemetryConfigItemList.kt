@@ -1,0 +1,244 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.model.Capabilities
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.schema_telemetry_air_quality_enabled
+import org.meshtastic.core.resources.schema_telemetry_air_quality_enabled_description
+import org.meshtastic.core.resources.schema_telemetry_air_quality_interval
+import org.meshtastic.core.resources.schema_telemetry_air_quality_interval_description
+import org.meshtastic.core.resources.schema_telemetry_device_telemetry_enabled
+import org.meshtastic.core.resources.schema_telemetry_device_telemetry_enabled_description
+import org.meshtastic.core.resources.schema_telemetry_device_update_interval
+import org.meshtastic.core.resources.schema_telemetry_device_update_interval_description
+import org.meshtastic.core.resources.schema_telemetry_environment_display_fahrenheit
+import org.meshtastic.core.resources.schema_telemetry_environment_display_fahrenheit_description
+import org.meshtastic.core.resources.schema_telemetry_environment_measurement_enabled
+import org.meshtastic.core.resources.schema_telemetry_environment_measurement_enabled_description
+import org.meshtastic.core.resources.schema_telemetry_environment_screen_enabled
+import org.meshtastic.core.resources.schema_telemetry_environment_screen_enabled_description
+import org.meshtastic.core.resources.schema_telemetry_environment_update_interval
+import org.meshtastic.core.resources.schema_telemetry_environment_update_interval_description
+import org.meshtastic.core.resources.schema_telemetry_power_measurement_enabled
+import org.meshtastic.core.resources.schema_telemetry_power_measurement_enabled_description
+import org.meshtastic.core.resources.schema_telemetry_power_screen_enabled
+import org.meshtastic.core.resources.schema_telemetry_power_screen_enabled_description
+import org.meshtastic.core.resources.schema_telemetry_power_update_interval
+import org.meshtastic.core.resources.schema_telemetry_power_update_interval_description
+import org.meshtastic.core.resources.telemetry
+import org.meshtastic.core.resources.telemetry_config
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ModuleRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.radio.RebootBehavior
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.IntervalConfiguration
+import org.meshtastic.feature.settings.util.toDisplayString
+import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.device_telemetry_enabled
+
+@Composable
+fun TelemetryConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val telemetryConfig = state.moduleConfig.telemetry ?: ModuleConfig.TelemetryConfig.Builder().build()
+    val formState = rememberConfigState(initialValue = telemetryConfig)
+
+    val firmwareVersion = state.metadata?.firmware_version
+    val capabilities = remember(firmwareVersion) { Capabilities(firmwareVersion) }
+
+    RadioConfigScreenList(
+        rebootBehavior = RebootBehavior.ALWAYS,
+        title = stringResource(Res.string.telemetry),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = ModuleConfig.Builder().also { wb -> wb.telemetry = it }.build()
+            viewModel.setModuleConfig(config)
+        },
+    ) {
+        fieldItem(SettingsSearchCatalog.fieldKeys(ModuleRoute.TELEMETRY.route)) {
+            TitledCard(title = stringResource(Res.string.telemetry_config)) {
+                if (capabilities.offers(ModuleConfig.TelemetryConfig.device_telemetry_enabled)) {
+                    SwitchPreference(
+                        title = stringResource(Res.string.schema_telemetry_device_telemetry_enabled),
+                        modifier = Modifier.settingsField(Res.string.schema_telemetry_device_telemetry_enabled),
+                        summary = stringResource(Res.string.schema_telemetry_device_telemetry_enabled_description),
+                        checked = formState.value.device_telemetry_enabled,
+                        enabled = state.connected,
+                        onCheckedChange = {
+                            formState.value =
+                                formState.value.newBuilder().also { wb -> wb.device_telemetry_enabled = it }.build()
+                        },
+                        containerColor = CardDefaults.cardColors().containerColor,
+                    )
+                    HorizontalDivider()
+                }
+                val items = remember { IntervalConfiguration.BROADCAST_SHORT.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_telemetry_device_update_interval),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_device_update_interval),
+                    summary = stringResource(Res.string.schema_telemetry_device_update_interval_description),
+                    selectedItem = formState.value.device_update_interval.toLong(),
+                    enabled = state.connected,
+                    items = items.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.device_update_interval = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_telemetry_environment_measurement_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_environment_measurement_enabled),
+                    summary = stringResource(Res.string.schema_telemetry_environment_measurement_enabled_description),
+                    checked = formState.value.environment_measurement_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.environment_measurement_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                val envItems = remember { IntervalConfiguration.BROADCAST_SHORT.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_telemetry_environment_update_interval),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_environment_update_interval),
+                    summary = stringResource(Res.string.schema_telemetry_environment_update_interval_description),
+                    selectedItem = formState.value.environment_update_interval.toLong(),
+                    enabled = state.connected,
+                    items = envItems.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value
+                                .newBuilder()
+                                .also { wb -> wb.environment_update_interval = it.toInt() }
+                                .build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_telemetry_environment_screen_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_environment_screen_enabled),
+                    summary = stringResource(Res.string.schema_telemetry_environment_screen_enabled_description),
+                    checked = formState.value.environment_screen_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.environment_screen_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_telemetry_environment_display_fahrenheit),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_environment_display_fahrenheit),
+                    summary = stringResource(Res.string.schema_telemetry_environment_display_fahrenheit_description),
+                    checked = formState.value.environment_display_fahrenheit,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.environment_display_fahrenheit = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_telemetry_air_quality_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_air_quality_enabled),
+                    summary = stringResource(Res.string.schema_telemetry_air_quality_enabled_description),
+                    checked = formState.value.air_quality_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.air_quality_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                val airItems = remember { IntervalConfiguration.BROADCAST_SHORT.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_telemetry_air_quality_interval),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_air_quality_interval),
+                    summary = stringResource(Res.string.schema_telemetry_air_quality_interval_description),
+                    selectedItem = formState.value.air_quality_interval.toLong(),
+                    enabled = state.connected,
+                    items = airItems.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.air_quality_interval = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_telemetry_power_measurement_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_power_measurement_enabled),
+                    summary = stringResource(Res.string.schema_telemetry_power_measurement_enabled_description),
+                    checked = formState.value.power_measurement_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.power_measurement_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                val powerItems = remember { IntervalConfiguration.BROADCAST_SHORT.allowedIntervals }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_telemetry_power_update_interval),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_power_update_interval),
+                    summary = stringResource(Res.string.schema_telemetry_power_update_interval_description),
+                    selectedItem = formState.value.power_update_interval.toLong(),
+                    enabled = state.connected,
+                    items = powerItems.map { it.value to it.toDisplayString() },
+                    onItemSelected = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.power_update_interval = it.toInt() }.build()
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_telemetry_power_screen_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_telemetry_power_screen_enabled),
+                    summary = stringResource(Res.string.schema_telemetry_power_screen_enabled_description),
+                    checked = formState.value.power_screen_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.power_screen_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+            }
+        }
+    }
+}

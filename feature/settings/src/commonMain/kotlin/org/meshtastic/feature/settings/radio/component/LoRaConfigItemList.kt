@@ -1,0 +1,710 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.settings.radio.component
+
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.common.util.NumberFormatter
+import org.meshtastic.core.model.Capabilities
+import org.meshtastic.core.model.Channel
+import org.meshtastic.core.model.ChannelOption
+import org.meshtastic.core.model.RegionInfo
+import org.meshtastic.core.model.RegionPresetConstraint
+import org.meshtastic.core.model.constraintFor
+import org.meshtastic.core.model.isLegalInRegionWithoutMap
+import org.meshtastic.core.model.normalizeCodingRateOverride
+import org.meshtastic.core.model.numChannels
+import org.meshtastic.core.model.presetForRegionChange
+import org.meshtastic.core.model.schemaLabelRes
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.advanced
+import org.meshtastic.core.resources.bandwidth_default
+import org.meshtastic.core.resources.bandwidth_option_khz
+import org.meshtastic.core.resources.bandwidth_unsupported
+import org.meshtastic.core.resources.bandwidth_unsupported_summary
+import org.meshtastic.core.resources.config_lora_coding_rate_fraction
+import org.meshtastic.core.resources.config_lora_coding_rate_override
+import org.meshtastic.core.resources.config_lora_coding_rate_override_max_summary
+import org.meshtastic.core.resources.config_lora_coding_rate_override_summary
+import org.meshtastic.core.resources.config_lora_coding_rate_preset_default
+import org.meshtastic.core.resources.config_lora_modem_preset_licensed_summary
+import org.meshtastic.core.resources.config_lora_modem_preset_summary
+import org.meshtastic.core.resources.config_lora_region_summary
+import org.meshtastic.core.resources.lora
+import org.meshtastic.core.resources.options
+import org.meshtastic.core.resources.schema_lora_bandwidth
+import org.meshtastic.core.resources.schema_lora_channel_num
+import org.meshtastic.core.resources.schema_lora_channel_num_description
+import org.meshtastic.core.resources.schema_lora_coding_rate
+import org.meshtastic.core.resources.schema_lora_config_ok_to_mqtt
+import org.meshtastic.core.resources.schema_lora_hop_limit
+import org.meshtastic.core.resources.schema_lora_hop_limit_description
+import org.meshtastic.core.resources.schema_lora_ignore_mqtt
+import org.meshtastic.core.resources.schema_lora_ignore_mqtt_description
+import org.meshtastic.core.resources.schema_lora_modem_preset
+import org.meshtastic.core.resources.schema_lora_override_duty_cycle
+import org.meshtastic.core.resources.schema_lora_override_frequency
+import org.meshtastic.core.resources.schema_lora_pa_fan_disabled
+import org.meshtastic.core.resources.schema_lora_region
+import org.meshtastic.core.resources.schema_lora_spread_factor
+import org.meshtastic.core.resources.schema_lora_spread_factor_description
+import org.meshtastic.core.resources.schema_lora_sx126x_rx_boosted_gain
+import org.meshtastic.core.resources.schema_lora_sx126x_rx_boosted_gain_description
+import org.meshtastic.core.resources.schema_lora_tx_enabled
+import org.meshtastic.core.resources.schema_lora_tx_enabled_description
+import org.meshtastic.core.resources.schema_lora_tx_power
+import org.meshtastic.core.resources.schema_lora_tx_power_description
+import org.meshtastic.core.resources.schema_lora_use_preset
+import org.meshtastic.core.resources.schema_lora_use_preset_description
+import org.meshtastic.core.resources.slot_auto
+import org.meshtastic.core.ui.component.DropDownItem
+import org.meshtastic.core.ui.component.DropDownPreference
+import org.meshtastic.core.ui.component.EditTextPreference
+import org.meshtastic.core.ui.component.SignedIntegerEditTextPreference
+import org.meshtastic.core.ui.component.SwitchPreference
+import org.meshtastic.core.ui.component.TitledCard
+import org.meshtastic.feature.settings.navigation.ConfigRoute
+import org.meshtastic.feature.settings.radio.RadioConfigViewModel
+import org.meshtastic.feature.settings.search.SettingsSearchCatalog
+import org.meshtastic.feature.settings.util.fieldTitle
+import org.meshtastic.feature.settings.util.intRange
+import org.meshtastic.proto.Config
+import org.meshtastic.proto.Config.LoRaConfig.ModemPreset
+import org.meshtastic.proto.Config.LoRaConfig.RegionCode
+import org.meshtastic.proto.bandwidth
+import org.meshtastic.proto.hop_limit
+import org.meshtastic.proto.tx_power
+
+private val SPREAD_FACTOR_RANGE = 5..12
+private val CODING_RATE_RANGE = 5..8
+
+/**
+ * Builds the modem-preset dropdown items: hide presets the target firmware's preset table doesn't have yet
+ * ([Capabilities.supportsPreset]), restrict to the region's legal presets (R7), then always keep the current selection
+ * present (disabled) so the field is never blank when the device's preset is illegal for the region.
+ *
+ * With no [presetConstraint], a non-null [unmappedRegion] applies the static Lite/Narrow/Tiny fallback for a radio that
+ * sent no region preset map ([isLegalInRegionWithoutMap]).
+ *
+ * Internal (not private): reused by the Mesh Beacon config editor's target-row preset pickers (design#140).
+ */
+internal fun buildPresetItems(
+    presetConstraint: RegionPresetConstraint?,
+    presetsGated: Boolean,
+    selectedPreset: ModemPreset,
+    capabilities: Capabilities,
+    labels: Map<ModemPreset, String>,
+    unmappedRegion: RegionCode? = null,
+): List<DropDownItem<ModemPreset>> {
+    fun labelOf(preset: ModemPreset) = labels[preset] ?: preset.name
+    val items =
+        ChannelOption.entries
+            .filter { option -> capabilities.supportsPreset(option) }
+            .filter { option -> presetConstraint == null || option.modemPreset in presetConstraint.presets }
+            .filter { option ->
+                presetConstraint != null ||
+                    unmappedRegion == null ||
+                    option.modemPreset.isLegalInRegionWithoutMap(unmappedRegion)
+            }
+            .map { option ->
+                DropDownItem(value = option.modemPreset, label = labelOf(option.modemPreset), enabled = !presetsGated)
+            }
+    return if (items.any { it.value == selectedPreset }) {
+        items
+    } else {
+        items + DropDownItem(value = selectedPreset, label = labelOf(selectedPreset), enabled = false)
+    }
+}
+
+/**
+ * Builds the region dropdown items: hide regions the target firmware's region table doesn't have yet
+ * ([Capabilities.supportsRegion]), but never hide the device's current selection.
+ */
+private fun buildRegionItems(
+    capabilities: Capabilities,
+    selectedRegion: RegionCode,
+    labels: Map<RegionCode, String>,
+): List<Pair<RegionCode, String>> = RegionInfo.entries
+    .filter { capabilities.supportsRegion(it) || it.regionCode == selectedRegion }
+    .map { it.regionCode to (labels[it.regionCode] ?: it.description) }
+
+/** Each preset's schema label in the user's language. A preset the schema does not label is absent. */
+@Composable
+internal fun presetLabels(): Map<ModemPreset, String> =
+    ModemPreset.entries.mapNotNull { preset -> preset.schemaLabelRes()?.let { preset to stringResource(it) } }.toMap()
+
+@Composable
+private fun regionLabels(): Map<RegionCode, String> =
+    RegionCode.entries.mapNotNull { region -> region.schemaLabelRes()?.let { region to stringResource(it) } }.toMap()
+
+@Composable
+fun LoRaConfigScreen(viewModel: RadioConfigViewModel, onBack: () -> Unit) {
+    val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
+    val loraConfig = state.radioConfig.lora ?: Config.LoRaConfig.Builder().build()
+    val primarySettings = state.channelList.getOrNull(0)
+
+    if (primarySettings == null) {
+        RadioConfigScreenList(
+            title = stringResource(Res.string.lora),
+            onBack = onBack,
+            configState = rememberConfigState(initialValue = loraConfig),
+            enabled = false,
+            responseState = state.responseState,
+            showConnectPrompt = state.connectPromptVisible,
+            onDismissPacketResponse = viewModel::clearPacketResponse,
+            onSave = {},
+        ) {}
+        return
+    }
+
+    val formState = rememberConfigState(initialValue = loraConfig)
+    val capabilities = remember(state.metadata?.firmware_version) { Capabilities(state.metadata?.firmware_version) }
+
+    val primaryChannel = remember(primarySettings, formState.value) { Channel(primarySettings, formState.value) }
+    val focusManager = LocalFocusManager.current
+    val bandwidthSelection =
+        loRaBandwidthSelection(
+            storedValue = formState.value.bandwidth,
+            region = formState.value.region,
+            hwModel = state.metadata?.hw_model,
+            pioEnv = state.pioEnv,
+        )
+    val customBandwidthIsValid = bandwidthSelection.allowsSave(formState.value.use_preset)
+    val cards = remember {
+        partitionFieldKeys(
+            SettingsSearchCatalog.fieldKeys(ConfigRoute.LORA.route),
+            "schema_lora_",
+            LORA_ADVANCED_FIELDS,
+        )
+    }
+
+    RadioConfigScreenList(
+        title = stringResource(Res.string.lora),
+        onBack = onBack,
+        configState = formState,
+        enabled = state.connected,
+        saveEnabled = customBandwidthIsValid,
+        responseState = state.responseState,
+        showConnectPrompt = state.connectPromptVisible,
+        onDismissPacketResponse = viewModel::clearPacketResponse,
+        onSave = {
+            val config = Config.Builder().also { wb -> wb.lora = it.withCodingRateOverrideFor(capabilities) }.build()
+            viewModel.setConfig(config)
+        },
+    ) {
+        fieldItem(cards[0]) {
+            TitledCard(title = stringResource(Res.string.options)) {
+                // The region→preset legality map is a function of firmware version + region, not of the device
+                // instance, so the locally-cached map (from our own handshake) is reused for remote admin too. Gated
+                // on the *target* node's firmware capability (metadata is per-target): pre-2.8 nodes don't get the
+                // map or the new TINY presets, which also keeps older remotes unconstrained.
+                val regionPresetMap = if (capabilities.supportsLoraRegionPresetMap) state.loraRegionPresetMap else null
+                val presetConstraint =
+                    remember(regionPresetMap, formState.value.region) {
+                        // UNSET's map entry states pin intent (firmware #11507), not a constraint: never let it
+                        // narrow the picker while the region is still unset.
+                        formState.value.region
+                            .takeIf { it != RegionCode.UNSET }
+                            ?.let { regionPresetMap.constraintFor(it) }
+                    }
+                val presetsGated = presetConstraint?.isGated(state.localIsLicensed) == true
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_lora_region),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_region),
+                    summary = stringResource(Res.string.config_lora_region_summary),
+                    enabled = state.connected,
+                    items =
+                    regionLabels().let { labels ->
+                        remember(capabilities, formState.value.region, labels) {
+                            buildRegionItems(capabilities, formState.value.region, labels)
+                        }
+                    },
+                    selectedItem = formState.value.region,
+                    onItemSelected = { region ->
+                        // Keeps the current preset (legality-repaired, R7); at fresh setup a placeholder LongFast
+                        // adopts the region's advertised/built-in default instead (#6704).
+                        val preset =
+                            regionPresetMap.presetForRegionChange(
+                                previousRegion = formState.value.region,
+                                newRegion = region,
+                                current = formState.value.modem_preset,
+                            )
+                        formState.value =
+                            formState.value
+                                .newBuilder()
+                                .also { wb ->
+                                    wb.region = region
+                                    wb.modem_preset = preset
+                                }
+                                .build()
+                                .withCodingRateOverrideFor(capabilities)
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_lora_use_preset),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_use_preset),
+                    summary = stringResource(Res.string.schema_lora_use_preset_description),
+                    checked = formState.value.use_preset,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.use_preset = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                if (formState.value.use_preset) {
+                    // Restrict the preset list to those legal in the selected region (R7); a null constraint means
+                    // unconstrained, so show every preset. Licensed-only regions disable their presets unless the
+                    // device is flagged as a licensed operator (R8).
+                    val selectedPreset = formState.value.modem_preset
+                    val labels = presetLabels()
+                    val presetItems =
+                        remember(
+                            presetConstraint,
+                            presetsGated,
+                            selectedPreset,
+                            capabilities,
+                            labels,
+                            regionPresetMap,
+                            formState.value.region,
+                        ) {
+                            buildPresetItems(
+                                presetConstraint,
+                                presetsGated,
+                                selectedPreset,
+                                capabilities,
+                                labels,
+                                unmappedRegion = formState.value.region.takeIf { regionPresetMap == null },
+                            )
+                        }
+                    DropDownPreference(
+                        title = stringResource(Res.string.schema_lora_modem_preset),
+                        modifier = Modifier.settingsField(Res.string.schema_lora_modem_preset),
+                        summary =
+                        if (presetsGated) {
+                            stringResource(Res.string.config_lora_modem_preset_licensed_summary)
+                        } else {
+                            stringResource(Res.string.config_lora_modem_preset_summary)
+                        },
+                        enabled = state.connected,
+                        items = presetItems,
+                        selectedItem = formState.value.modem_preset,
+                        onItemSelected = {
+                            formState.value =
+                                formState.value
+                                    .newBuilder()
+                                    .also { wb -> wb.modem_preset = it }
+                                    .build()
+                                    .withCodingRateOverrideFor(capabilities)
+                        },
+                    )
+                    if (capabilities.supportsCodingRateOverride) {
+                        HorizontalDivider()
+                        CodingRateOverridePreference(
+                            config = formState.value,
+                            enabled = state.connected,
+                            onConfigChange = { formState.value = it },
+                        )
+                    }
+                } else {
+                    ManualModemSettings(
+                        config = formState.value,
+                        bandwidthSelection = bandwidthSelection,
+                        enabled = state.connected,
+                        focusManager = focusManager,
+                        onConfigChange = { formState.value = it },
+                    )
+                }
+            }
+        }
+
+        fieldItem(cards[1]) {
+            TitledCard(title = stringResource(Res.string.advanced)) {
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_lora_ignore_mqtt),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_ignore_mqtt),
+                    summary = stringResource(Res.string.schema_lora_ignore_mqtt_description),
+                    checked = formState.value.ignore_mqtt,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.ignore_mqtt = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_lora_config_ok_to_mqtt),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_config_ok_to_mqtt),
+                    checked = formState.value.config_ok_to_mqtt,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.config_ok_to_mqtt = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_lora_tx_enabled),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_tx_enabled),
+                    summary = stringResource(Res.string.schema_lora_tx_enabled_description),
+                    checked = formState.value.tx_enabled,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.tx_enabled = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_lora_override_duty_cycle),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_override_duty_cycle),
+                    checked = formState.value.override_duty_cycle,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.override_duty_cycle = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                // The schema declares this bound; a pin that drops it must fail here rather than unbound the picker.
+                val hopLimitItems = remember {
+                    requireNotNull(Config.LoRaConfig.hop_limit.intRange).map { it to it.toString() }
+                }
+                DropDownPreference(
+                    title = stringResource(Res.string.schema_lora_hop_limit),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_hop_limit),
+                    summary = stringResource(Res.string.schema_lora_hop_limit_description),
+                    items = hopLimitItems,
+                    selectedItem = formState.value.hop_limit,
+                    onItemSelected = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.hop_limit = it }.build()
+                    },
+                    enabled = state.connected,
+                )
+                HorizontalDivider()
+                var isFocusedSlot by remember { mutableStateOf(false) }
+                EditTextPreference(
+                    title = stringResource(Res.string.schema_lora_channel_num),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_channel_num),
+                    summary = stringResource(Res.string.schema_lora_channel_num_description),
+                    value =
+                    if (isFocusedSlot || formState.value.channel_num != 0) {
+                        formState.value.channel_num
+                    } else {
+                        primaryChannel.channelNum
+                    },
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onFocusChanged = { isFocusedSlot = it.isFocused },
+                    trailingIcon =
+                    if (
+                        !isFocusedSlot &&
+                        formState.value.channel_num == 0 &&
+                        formState.value.override_frequency == 0f
+                    ) {
+                        { Text(stringResource(Res.string.slot_auto)) }
+                    } else {
+                        null
+                    },
+                    onValueChanged = {
+                        if (it <= formState.value.numChannels) { // total num of LoRa channels
+                            formState.value = formState.value.newBuilder().also { wb -> wb.channel_num = it }.build()
+                        }
+                    },
+                )
+                HorizontalDivider()
+                SwitchPreference(
+                    title = stringResource(Res.string.schema_lora_sx126x_rx_boosted_gain),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_sx126x_rx_boosted_gain),
+                    summary = stringResource(Res.string.schema_lora_sx126x_rx_boosted_gain_description),
+                    checked = formState.value.sx126x_rx_boosted_gain,
+                    enabled = state.connected,
+                    onCheckedChange = {
+                        formState.value =
+                            formState.value.newBuilder().also { wb -> wb.sx126x_rx_boosted_gain = it }.build()
+                    },
+                    containerColor = CardDefaults.cardColors().containerColor,
+                )
+                HorizontalDivider()
+                FrequencyOverridePreference(
+                    overrideFrequency = formState.value.override_frequency,
+                    autoFrequency = primaryChannel.radioFreq,
+                    enabled = state.connected,
+                    focusManager = focusManager,
+                    onValueChange = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.override_frequency = it }.build()
+                    },
+                )
+                HorizontalDivider()
+                SignedIntegerEditTextPreference(
+                    title = fieldTitle(Res.string.schema_lora_tx_power, Config.LoRaConfig.tx_power),
+                    modifier = Modifier.settingsField(Res.string.schema_lora_tx_power),
+                    summary = stringResource(Res.string.schema_lora_tx_power_description),
+                    value = formState.value.tx_power,
+                    enabled = state.connected,
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = {
+                        formState.value = formState.value.newBuilder().also { wb -> wb.tx_power = it }.build()
+                    },
+                )
+                if (viewModel.hasPaFan) {
+                    HorizontalDivider()
+                    SwitchPreference(
+                        title = stringResource(Res.string.schema_lora_pa_fan_disabled),
+                        modifier = Modifier.settingsField(Res.string.schema_lora_pa_fan_disabled),
+                        checked = formState.value.pa_fan_disabled,
+                        enabled = state.connected,
+                        onCheckedChange = {
+                            formState.value =
+                                formState.value.newBuilder().also { wb -> wb.pa_fan_disabled = it }.build()
+                        },
+                        containerColor = CardDefaults.cardColors().containerColor,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** [mhz] as the override frequency field shows it: fixed three decimals, a dot separator, no grouping. */
+internal fun formatFrequencyMhz(mhz: Float): String = NumberFormatter.formatInvariant(mhz, FREQUENCY_DECIMALS)
+
+private const val FREQUENCY_DECIMALS = 3
+
+/** The fields the Advanced card holds; every other LoRa field is on the Options card. */
+internal val LORA_ADVANCED_FIELDS =
+    listOf(
+        "ignore_mqtt",
+        "config_ok_to_mqtt",
+        "tx_enabled",
+        "override_duty_cycle",
+        "hop_limit",
+        "channel_num",
+        "sx126x_rx_boosted_gain",
+        "override_frequency",
+        "tx_power",
+        "pa_fan_disabled",
+    )
+
+/**
+ * Frequency override in MHz. Unfocused it shows [formatFrequencyMhz] (or the auto slot's frequency with the auto label
+ * while unset); focused it keeps whatever the user types.
+ */
+@Composable
+private fun FrequencyOverridePreference(
+    overrideFrequency: Float,
+    autoFrequency: Float,
+    enabled: Boolean,
+    focusManager: FocusManager,
+    onValueChange: (Float) -> Unit,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    var typed by remember { mutableStateOf<String?>(null) }
+    val shown = typed ?: formatFrequencyMhz(if (overrideFrequency != 0f) overrideFrequency else autoFrequency)
+    EditTextPreference(
+        title = stringResource(Res.string.schema_lora_override_frequency),
+        modifier = Modifier.settingsField(Res.string.schema_lora_override_frequency),
+        value = shown,
+        enabled = enabled,
+        isError = parseFrequencyOverride(shown) == null,
+        keyboardOptions =
+        KeyboardOptions.Default.copy(keyboardType = KeyboardType.DecimalSigned, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+        onFocusChanged = {
+            isFocused = it.isFocused
+            if (!it.isFocused) typed = null
+        },
+        trailingIcon =
+        if (!isFocused && overrideFrequency == 0f) {
+            { Text(stringResource(Res.string.slot_auto)) }
+        } else {
+            null
+        },
+        onValueChanged = { text ->
+            val parsed = parseFrequencyOverride(text)
+            if (parsed != null) {
+                typed = text
+                onValueChange(parsed)
+            } else if (NumberFormatter.isPartialDecimal(text)) {
+                typed = text
+            }
+        },
+    )
+}
+
+private fun Config.LoRaConfig.withCodingRateOverrideFor(capabilities: Capabilities): Config.LoRaConfig =
+    if (capabilities.supportsCodingRateOverride) normalizeCodingRateOverride() else this
+
+/**
+ * Raises the preset's coding rate without leaving the preset (design#161). Only rates above the preset's own are
+ * offered, since firmware ignores anything lower, and "Preset default" is written as 0.
+ */
+@Composable
+private fun CodingRateOverridePreference(
+    config: Config.LoRaConfig,
+    enabled: Boolean,
+    onConfigChange: (Config.LoRaConfig) -> Unit,
+) {
+    val preset = ChannelOption.from(config.modem_preset) ?: return
+    val atMax = preset.codingRateOverrides.isEmpty()
+    val presetDefault =
+        stringResource(
+            Res.string.config_lora_coding_rate_preset_default,
+            stringResource(Res.string.config_lora_coding_rate_fraction, preset.codingRate),
+        )
+    val items =
+        listOf(DropDownItem(value = 0, label = presetDefault)) +
+            preset.codingRateOverrides.map { rate ->
+                DropDownItem(value = rate, label = stringResource(Res.string.config_lora_coding_rate_fraction, rate))
+            }
+    DropDownPreference(
+        title = stringResource(Res.string.config_lora_coding_rate_override),
+        modifier = Modifier.settingsField(Res.string.schema_lora_coding_rate),
+        summary =
+        if (atMax) {
+            stringResource(Res.string.config_lora_coding_rate_override_max_summary)
+        } else {
+            stringResource(Res.string.config_lora_coding_rate_override_summary)
+        },
+        enabled = enabled && !atMax,
+        items = items,
+        selectedItem = preset.codingRateOverride(config.coding_rate),
+        onItemSelected = { onConfigChange(config.newBuilder().also { wb -> wb.coding_rate = it }.build()) },
+    )
+}
+
+@Composable
+private fun ManualModemSettings(
+    config: Config.LoRaConfig,
+    bandwidthSelection: LoRaBandwidthSelection,
+    enabled: Boolean,
+    focusManager: FocusManager,
+    onConfigChange: (Config.LoRaConfig) -> Unit,
+) {
+    androidx.compose.foundation.layout.Column {
+        LoRaBandwidthPreference(
+            config = config,
+            selection = bandwidthSelection,
+            enabled = enabled,
+            focusManager = focusManager,
+            onConfigChange = onConfigChange,
+        )
+        HorizontalDivider()
+        EditTextPreference(
+            title = stringResource(Res.string.schema_lora_spread_factor),
+            modifier = Modifier.settingsField(Res.string.schema_lora_spread_factor),
+            summary = stringResource(Res.string.schema_lora_spread_factor_description),
+            value = config.spread_factor,
+            enabled = enabled,
+            isError = config.spread_factor !in SPREAD_FACTOR_RANGE,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChanged = {
+                if (it in SPREAD_FACTOR_RANGE) {
+                    onConfigChange(config.newBuilder().also { wb -> wb.spread_factor = it }.build())
+                }
+            },
+        )
+        HorizontalDivider()
+        EditTextPreference(
+            title = stringResource(Res.string.schema_lora_coding_rate),
+            modifier = Modifier.settingsField(Res.string.schema_lora_coding_rate),
+            value = config.coding_rate,
+            enabled = enabled,
+            isError = config.coding_rate !in CODING_RATE_RANGE,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChanged = {
+                if (it in CODING_RATE_RANGE) {
+                    onConfigChange(config.newBuilder().also { wb -> wb.coding_rate = it }.build())
+                }
+            },
+        )
+    }
+}
+
+@Composable
+internal fun LoRaBandwidthPreference(
+    config: Config.LoRaConfig,
+    selection: LoRaBandwidthSelection,
+    enabled: Boolean,
+    focusManager: FocusManager,
+    onConfigChange: (Config.LoRaConfig) -> Unit,
+) {
+    val options = selection.options
+    if (options == null) {
+        EditTextPreference(
+            title = fieldTitle(Res.string.schema_lora_bandwidth, Config.LoRaConfig.bandwidth),
+            modifier = Modifier.settingsField(Res.string.schema_lora_bandwidth),
+            value = config.bandwidth,
+            enabled = enabled,
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            onValueChanged = { onConfigChange(config.newBuilder().also { wb -> wb.bandwidth = it }.build()) },
+        )
+        return
+    }
+
+    val items =
+        options
+            .map { option ->
+                DropDownItem(
+                    value = option.wireValue,
+                    label =
+                    if (option.wireValue == 0) {
+                        stringResource(Res.string.bandwidth_default, option.displayKilohertz)
+                    } else {
+                        stringResource(Res.string.bandwidth_option_khz, option.displayKilohertz)
+                    },
+                )
+            }
+            .toMutableList()
+    selection.invalidPersistedValue?.let { invalidValue ->
+        val value = stringResource(Res.string.bandwidth_option_khz, invalidValue.toString())
+        val invalidLabel = stringResource(Res.string.bandwidth_unsupported, value)
+        items += DropDownItem(value = invalidValue, label = invalidLabel, enabled = false)
+    }
+
+    DropDownPreference(
+        title = stringResource(Res.string.schema_lora_bandwidth),
+        modifier = Modifier.settingsField(Res.string.schema_lora_bandwidth),
+        summary =
+        if (selection.isValid) {
+            null
+        } else {
+            stringResource(Res.string.bandwidth_unsupported_summary)
+        },
+        enabled = enabled,
+        items = items,
+        selectedItem = config.bandwidth,
+        onItemSelected = { onConfigChange(config.newBuilder().also { wb -> wb.bandwidth = it }.build()) },
+    )
+}

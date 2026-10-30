@@ -1,0 +1,170 @@
+name: Docs Release
+
+# Publishes release docs to the persistent gh-pages branch.
+#
+# promote.yml dispatches this on the tag after every open, closed and production
+# promotion, because a tag created with GITHUB_TOKEN starts no workflow. The tag
+# trigger covers a tag pushed by hand, and a manual run against a tag ref
+# (re)publishes that version without cutting a new tag.
+#
+# Production tags (vX.Y.Z) own the site root and get a /vX.Y.Z/ copy, plus a
+# refreshed Dokka reference at /api/.
+#
+# Open- and closed-testing tags (vX.Y.Z-open.N / vX.Y.Z-closed.N) publish a
+# per-tag snapshot at /vX.Y.Z-open.N/ only. They deliberately do NOT touch the
+# root or /api/: the root belongs to production releases, and /api/ is an
+# unversioned channel that docs-deploy.yml rebuilds from main every day.
+#
+# These per-tag prerelease directories accumulate during a version cycle and are
+# reaped by post-release-cleanup.yml, which a production publish dispatches. That
+# cleanup also removes every production copy older than the newest one below /vX.Y.Z/.
+#
+# The /main/ snapshot is owned by docs-deploy.yml and is left untouched here.
+
+on:
+  push:
+    tags:
+      # Production plus the open/closed testing tracks. Internal builds are
+      # excluded: they are tagged many times per cycle and are not a channel we
+      # publish documentation for.
+      - 'v*.*.*'
+      - '!v*-internal.*'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'meshtastic/Meshtastic-Android'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    # actions: write is only for the cleanup dispatch; job permissions replace the
+    # workflow block, so contents: write is restated.
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Resolves the tag into: the docs version label (which becomes the
+      # published directory name) and whether this is a production release.
+      - name: Resolve Release Channel
+        id: version
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            refs/tags/*) TAG="${GITHUB_REF#refs/tags/}" ;;
+            *)
+              echo "This workflow must run against a release tag ref (got $GITHUB_REF)." >&2
+              echo "For workflow_dispatch, select the tag under 'Use workflow from'." >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "docs_version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "is_production=true" >> "$GITHUB_OUTPUT"
+            echo "Production release: ${BASH_REMATCH[1]} -> / and /v${BASH_REMATCH[1]}/"
+          elif [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+-(open|closed)\.[0-9]+)$ ]]; then
+            echo "docs_version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "is_production=false" >> "$GITHUB_OUTPUT"
+            echo "${BASH_REMATCH[2]}-testing prerelease -> /v${BASH_REMATCH[1]}/ only"
+          else
+            echo "Tag '$TAG' is not a publishable docs channel." >&2
+            echo "Expected vX.Y.Z, vX.Y.Z-open.N or vX.Y.Z-closed.N." >&2
+            exit 1
+          fi
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+          # Dokka runs commonizeNativeDistribution, which reads ~/.konan.
+          cache_konan: 'true'
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        # With ruby-version unset this reads the root .ruby-version; the bundle is docs/Gemfile.
+        env:
+          BUNDLE_GEMFILE: docs/Gemfile
+        with:
+          bundler-cache: true
+
+      # Versioned docs (/vX.Y.Z/ or /vX.Y.Z-open.N/) — built for every channel.
+      - name: Build Versioned Docs
+        run: ./gradlew generateDocsBundle validateDocsBundle publishDocsSite -Pdocs.channel=release -Pdocs.version=${{ steps.version.outputs.docs_version }} -Pci=true
+
+      # Root site (/) — production releases only.
+      - name: Build Root Docs Site
+        if: steps.version.outputs.is_production == 'true'
+        run: ./gradlew publishDocsSite -Pdocs.channel=root -Pci=true
+
+      # The versioned source leaves build/_site/ first so the root site does not
+      # nest it. The Jekyll builds read only the generated sites and Dokka (the
+      # /api/ reference, production only) only the sources, so all three overlap.
+      - name: Build Jekyll Sites and Dokka
+        env:
+          DOCS_VERSION: ${{ steps.version.outputs.docs_version }}
+          IS_PRODUCTION: ${{ steps.version.outputs.is_production }}
+        run: |
+          set -euo pipefail
+          site_name="${GITHUB_REPOSITORY#*/}"
+          mv "build/_site/v${DOCS_VERSION}" build/v_temp
+
+          BUNDLE_GEMFILE=docs/Gemfile bundle exec jekyll build \
+            --source build/v_temp \
+            --destination build/jekyll_release \
+            --baseurl "/${site_name}/v${DOCS_VERSION}" &
+          release_pid=$!
+
+          root_pid=""
+          if [ "$IS_PRODUCTION" = "true" ]; then
+            BUNDLE_GEMFILE=docs/Gemfile bundle exec jekyll build \
+              --source build/_site \
+              --destination build/jekyll_root \
+              --baseurl "/${site_name}" &
+            root_pid=$!
+            ./gradlew :dokkaGeneratePublicationHtml
+          fi
+
+          wait "$release_pid"
+          if [ -n "$root_pid" ]; then
+            wait "$root_pid"
+          fi
+
+      - name: Stage channels
+        id: stage
+        env:
+          DOCS_VERSION: ${{ steps.version.outputs.docs_version }}
+          IS_PRODUCTION: ${{ steps.version.outputs.is_production }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/pages_staging
+          cp -r build/jekyll_release "build/pages_staging/v${DOCS_VERSION}"
+          channels="v${DOCS_VERSION}"
+          if [ "$IS_PRODUCTION" = "true" ]; then
+            cp -r build/jekyll_root build/pages_staging/root
+            cp -r build/dokka/html build/pages_staging/api
+            channels="root $channels api"
+          fi
+          echo "channels=$channels" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to gh-pages
+        run: scripts/docs/publish-to-gh-pages.sh build/pages_staging ${{ steps.stage.outputs.channels }}
+
+      # The cleanup refuses to reap until /vX.Y.Z/ is on gh-pages, which the push above
+      # just made true. A dispatch is exempt from GITHUB_TOKEN's event suppression.
+      - name: Dispatch post-release cleanup
+        if: steps.version.outputs.is_production == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_VERSION: ${{ steps.version.outputs.docs_version }}
+        run: gh workflow run post-release-cleanup.yml --ref main -f "base_version=$BASE_VERSION" -f confirm_deletion=true

@@ -1,0 +1,107 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.data.manager
+
+import co.touchlab.kermit.Logger
+import org.koin.core.annotation.Single
+import org.meshtastic.core.common.di.ServiceScope
+import org.meshtastic.core.common.util.clampTimestampToNow
+import org.meshtastic.core.model.DataPacket
+import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.util.decodeOrNull
+import org.meshtastic.core.model.util.toOneLiner
+import org.meshtastic.core.repository.MeshConnectionManager
+import org.meshtastic.core.repository.MeshNotificationManager
+import org.meshtastic.core.repository.NodeManager
+import org.meshtastic.core.repository.RadioInterfaceService
+import org.meshtastic.core.repository.RadioSessionContext
+import org.meshtastic.core.repository.TelemetryPacketHandler
+import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.Telemetry
+import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * Implementation of [TelemetryPacketHandler] that processes telemetry packets and raises or clears low-battery
+ * warnings.
+ */
+@Single
+class TelemetryPacketHandlerImpl(
+    private val nodeManager: NodeManager,
+    private val connectionManager: Lazy<MeshConnectionManager>,
+    private val serviceNotifications: MeshNotificationManager,
+    private val radioInterfaceService: RadioInterfaceService,
+    private val scope: ServiceScope,
+) : TelemetryPacketHandler {
+
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "ReturnCount")
+    override fun handleTelemetry(
+        packet: MeshPacket,
+        dataPacket: DataPacket,
+        myNodeNum: Int,
+        session: RadioSessionContext,
+    ) {
+        val payload = packet.decoded?.payload ?: return
+        val telemetry =
+            (Telemetry.ADAPTER.decodeOrNull(payload, Logger) ?: return).let {
+                if (it.time == 0) {
+                    it.newBuilder()
+                        .also { wb -> wb.time = (dataPacket.time.milliseconds.inWholeSeconds).toInt() }
+                        .build()
+                } else {
+                    it
+                }
+            }
+        Logger.d { "Telemetry from ${packet.from}: ${Telemetry.ADAPTER.toOneLiner(telemetry)}" }
+        val fromNum = packet.from
+        val isRemote = fromNum != myNodeNum
+        if (!isRemote) connectionManager.value.updateTelemetry(telemetry)
+
+        val transform: (Node) -> Node = { node ->
+            var nextNode = node
+            telemetry.device_metrics?.let { nextNode = nextNode.copy(deviceMetrics = it) }
+            telemetry.environment_metrics?.let { nextNode = nextNode.copy(environmentMetrics = it) }
+            telemetry.power_metrics?.let { nextNode = nextNode.copy(powerMetrics = it) }
+            telemetry.air_quality_metrics?.let { nextNode = nextNode.copy(airQualityMetrics = it) }
+            telemetry.soil_water_metrics?.let { nextNode = nextNode.copy(soilWaterMetrics = it) }
+            val telemetryTime = if (telemetry.time != 0) telemetry.time else nextNode.lastHeard
+            val newLastHeard = clampTimestampToNow(maxOf(nextNode.lastHeard, telemetryTime))
+            nextNode.copy(lastHeard = newLastHeard)
+        }
+        nodeManager.updateNodeForSession(fromNum, session, transform = transform)
+
+        val metrics = telemetry.device_metrics ?: return
+        val updatedNode = nodeManager.nodeDBbyNodeNum[fromNum] ?: return
+        if (fromNum != myNodeNum && !updatedNode.isFavorite) return
+
+        // A reading without a level says nothing about the battery, so it neither warns nor clears.
+        val batteryLevel = metrics.battery_level ?: return
+        val hasBattery = (metrics.voltage ?: 0f) > 0f
+        if (hasBattery && batteryLevel <= BATTERY_PERCENT_LOW_THRESHOLD) {
+            radioInterfaceService.launchSessionWork(scope, session) {
+                serviceNotifications.notifyLowBattery(updatedNode, isRemote)
+            }
+        } else {
+            radioInterfaceService.launchSessionWork(scope, session) {
+                serviceNotifications.cancelLowBatteryNotification(fromNum)
+            }
+        }
+    }
+
+    companion object {
+        private const val BATTERY_PERCENT_LOW_THRESHOLD = 20
+    }
+}

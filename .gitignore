@@ -1,0 +1,113 @@
+# Android Studio
+/.idea/*
+!/.idea/codeStyles
+!/.idea/runConfigurations/
+!/.idea/icon.svg
+*.iws
+*.iml
+
+.gradle
+/local.properties
+.DS_Store
+**/build/**
+/captures
+.externalNativeBuild
+.cxx
+/app/release
+**/debug/**
+!/androidApp/src/debug/**
+**/release/**
+
+# Java KeyStore certificates
+*.jks
+keystore.properties
+
+# AGP profiling traces
+*.trace
+
+# Kotlin compiler
+.kotlin
+
+
+# VS code
+.vscode/settings.json
+
+# Secrets
+/secrets.properties
+/google.properties
+/fastlane/play-store-credentials.json
+**/google-services.json
+
+# Generated library definitions
+**/src/main/resources/aboutlibraries.json
+
+/fastlane/report.xml
+
+/build-logic/convention/build/*
+/build-logic/build/
+
+# Personal build scripts
+build-and-install-android.sh
+wireless-install.sh
+
+# Generated docs artifacts
+docs/_site/
+docs/.jekyll-cache/
+docs/.jekyll-metadata
+
+# Git worktrees
+.worktrees/
+/firebase-debug.log.jdk/
+firebase-debug.log
+.agent_plans/
+.agent_refs/
+.agent_artifacts/
+# Firebase Studio / Antigravity auto-provisioned skills — not used by this project
+.agents/
+
+# JVM crash dumps (desktopApp test runs) — regenerable, and untracked paths leak into public Build Scans
+hs_err_pid*.log
+replay_pid*.log
+.attach_pid*
+
+# Local build output redirected to a file
+/build.log
+
+# Local library development clones
+/coil/
+/kable/
+.opencode/
+# feature/docs bundles its docs under build/; anything here is a stale generated copy
+feature/docs/src/commonMain/composeResources/
+
+/desktop/bin/
+/build-logic/convention/bin/
+/.specify/extensions/.cache/
+
+# Flatpak source manifests and repositories
+flatpak-sources-*.json
+flatpak-sources.json
+offline-repository/
+# Share team-wide Claude config (settings, subagents, hooks, skills); keep per-user local settings ignored
+.claude/*
+!.claude/settings.json
+!.claude/agents/
+!.claude/hooks/
+!.claude/skills/
+build-scan-*.scan
+# burningmesh capture replay assets (private data — generated via replay_server.py --export)
+*.fromradio
+
+# craft pipeline scratch workpad (per-task working notes, not source)
+/workpad.md
+/workpad.*.md
+
+# Agent session handoff log — local-only scratch, not version-controlled
+.agent_memory/
+
+# Local agent memory (remember plugin) — must never be committed
+.remember/
+
+# Python bytecode from scripts/
+__pycache__/
+*.pyc
