@@ -869,7 +869,6 @@
     <string name="games_promotion_title">Promote pawn to</string>
     <string name="games_your_turn">Your move</string>
     <string name="games_peer_turn">Opponent to move</string>
-    <string name="games_peer_turn">Opponent to move</string>
     <string name="games_you_are_white">You are White</string>
     <string name="games_you_are_black">You are Black</string>
     <string name="games_you_are_x">You are X</string>
