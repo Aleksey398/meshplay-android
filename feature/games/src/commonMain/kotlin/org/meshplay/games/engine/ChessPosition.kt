@@ -18,6 +18,7 @@ package org.meshplay.games.engine
 
 import org.meshplay.protocol.GameResult
 import org.meshplay.protocol.Side
+import kotlin.math.abs
 
 /**
  * Immutable chess position with full legal-move generation (castling, en passant, promotions)
@@ -44,7 +45,7 @@ data class ChessPosition(
         get() {
             if (halfmoveClock >= FIFTY_MOVE_CLOCK) return GameResult.DRAW
             if (insufficientMaterial()) return GameResult.DRAW
-            if (legalMoves().isNotEmpty()) return null
+            if (legalMovesUci().isNotEmpty()) return null
             return if (whiteToMove) GameResult.BLACK_WINS else GameResult.WHITE_WINS
         }
 
