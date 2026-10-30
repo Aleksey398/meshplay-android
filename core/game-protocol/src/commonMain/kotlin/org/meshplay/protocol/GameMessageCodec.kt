@@ -98,9 +98,10 @@ object GameMessageCodec {
     fun decode(text: String): GameMessage? {
         if (!looksLikeGameMessage(text)) return null
         if (!text.endsWith("]")) return null
-        val inner = text.substring(PREFIX.length, text.length - 1)
+        // Split the whole bracketed body so field 0 is the MG1 tag: MG1 | KIND | TYPE | PAYLOAD | SESSION.
+        val inner = text.substring(1, text.length - 1)
         val fields = inner.split('|')
-        if (fields.size != FIELD_COUNT) return null
+        if (fields.size != FIELD_COUNT || fields[0] != TAG) return null
         val kind = GameKind.fromWireTag(fields[0]) ?: return null
         val sessionId = fields[4].toIntOrNull() ?: return null
         if (sessionId !in 0..MAX_SESSION_ID) return null
