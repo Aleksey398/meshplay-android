@@ -22,7 +22,7 @@ import org.meshtastic.core.di.CoroutineDispatchers
 import org.meshtastic.core.repository.TakCertificateStore
 
 /**
- * Platform-agnostic contract for the Meshtastic TAK server.
+ * Platform-agnostic contract for the MeshPlay TAK server.
  *
  * The production implementation on Android / JVM runs a TLS (mTLS) listener on port [DEFAULT_TAK_PORT] (8089) using a
  * per-install server identity issued by a private CA on first start (see [TakCertificateProvider]). The exported `.zip`

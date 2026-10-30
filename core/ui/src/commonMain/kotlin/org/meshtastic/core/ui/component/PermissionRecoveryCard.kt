@@ -243,7 +243,7 @@ private fun PermissionRecoveryCardPreviewScaffold(status: PermissionStatus) {
             PermissionRecoveryCard(
                 status = status,
                 rationale =
-                "Meshtastic needs Nearby devices access to find your radio and connect to it. Without it, " +
+                "MeshPlay needs Nearby devices access to find your radio and connect to it. Without it, " +
                     "Bluetooth is unavailable — Wi-Fi and USB still work.",
                 onRequest = {},
                 onOpenSettings = {},

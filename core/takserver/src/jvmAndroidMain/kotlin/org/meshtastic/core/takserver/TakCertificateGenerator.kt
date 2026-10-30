@@ -89,7 +89,7 @@ internal object TakCertificateGenerator {
         val serverKeys = newKeyPair(random)
         val clientKeys = newKeyPair(random)
 
-        val caName = X500Name("CN=Meshtastic TAK CA $installId, O=Meshtastic")
+        val caName = X500Name("CN=MeshPlay TAK CA $installId, O=MeshPlay")
         val caCert =
             certificate(random, caName, caName, caKeys, caKeys.private) {
                 addExtension(Extension.basicConstraints, true, BasicConstraints(0))
@@ -99,7 +99,7 @@ internal object TakCertificateGenerator {
             certificate(
                 random,
                 caName,
-                X500Name("CN=$LOOPBACK_HOST, OU=TAK Server, O=Meshtastic"),
+                X500Name("CN=$LOOPBACK_HOST, OU=TAK Server, O=MeshPlay"),
                 serverKeys,
                 caKeys.private,
             ) {
@@ -126,7 +126,7 @@ internal object TakCertificateGenerator {
             certificate(
                 random,
                 caName,
-                X500Name("CN=Meshtastic TAK Client $installId, OU=TAK Client, O=Meshtastic"),
+                X500Name("CN=MeshPlay TAK Client $installId, OU=TAK Client, O=MeshPlay"),
                 clientKeys,
                 caKeys.private,
             ) {

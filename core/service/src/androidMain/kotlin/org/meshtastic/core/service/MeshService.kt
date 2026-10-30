@@ -242,7 +242,7 @@ class MeshService : Service() {
         try {
             val powerManager = getSystemService(POWER_SERVICE) as PowerManager
             val lock =
-                powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Meshtastic::MeshServiceWakeLock").apply {
+                powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MeshPlay::MeshServiceWakeLock").apply {
                     setReferenceCounted(false)
                 }
             lock.acquire(WAKE_LOCK_TIMEOUT_MS)

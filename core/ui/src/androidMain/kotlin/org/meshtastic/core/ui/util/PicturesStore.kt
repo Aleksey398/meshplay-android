@@ -27,11 +27,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private const val PICTURES_RELATIVE_PATH = "Pictures/Meshtastic"
+private const val PICTURES_RELATIVE_PATH = "Pictures/MeshPlay"
 private const val JPEG_QUALITY = 92
 
 /**
- * Saves [bitmap] as a JPEG in Pictures/Meshtastic, named after [title] and the time, and returns it, or null when
+ * Saves [bitmap] as a JPEG in Pictures/MeshPlay, named after [title] and the time, and returns it, or null when
  * nothing was saved. Android 10 and later only, where writing there needs no storage permission. Blocks on disk, so
  * call it off the main thread.
  */
@@ -54,7 +54,7 @@ fun saveJpegToPictures(context: Context, bitmap: Bitmap, title: String): Uri? {
     return uri.takeIf { written }
 }
 
-/** The Pictures/Meshtastic entry [saveJpegToPictures] writes, for a JPEG another writer fills, such as the camera. */
+/** The Pictures/MeshPlay entry [saveJpegToPictures] writes, for a JPEG another writer fills, such as the camera. */
 @RequiresApi(Build.VERSION_CODES.Q)
 fun picturesJpegEntry(title: String): ContentValues {
     val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())

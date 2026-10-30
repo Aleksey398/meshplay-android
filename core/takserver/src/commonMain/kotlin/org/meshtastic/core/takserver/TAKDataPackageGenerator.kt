@@ -25,7 +25,7 @@ import kotlin.uuid.Uuid
  *
  * The data package follows the MissionPackageManifest v2 format:
  * ```
- * Meshtastic_TAK_Server.zip
+ * MeshPlay_TAK_Server.zip
  * ├── meshtastic-server.pref   (ATAK connection preferences, incl. the container password)
  * ├── truststore.p12           (this install's CA certificate only, no private key)
  * ├── client.p12               (this install's client identity for mTLS)
@@ -39,7 +39,7 @@ object TAKDataPackageGenerator {
     private const val PREF_FILE_NAME = "meshtastic-server.pref"
     private const val TRUSTSTORE_FILE_NAME = "truststore.p12"
     private const val CLIENT_P12_FILE_NAME = "client.p12"
-    private const val PACKAGE_NAME = "Meshtastic_TAK_Server"
+    private const val PACKAGE_NAME = "MeshPlay_TAK_Server"
 
     // XML.compat preserves xmlutil's pre-1.0 serialization defaults. The non-deprecated 1.0 builders
     // (XML.recommended/XML.V1) intentionally change serialization defaults, which would alter the CoT
@@ -63,7 +63,7 @@ object TAKDataPackageGenerator {
         credentials: TakDataPackageCredentials,
         serverHost: String = "127.0.0.1",
         port: Int = DEFAULT_TAK_PORT,
-        description: String = "Meshtastic TAK Server",
+        description: String = "MeshPlay TAK Server",
     ): ByteArray {
         val prefContent = generateConfigPref(serverHost, port, credentials.password, description)
         val manifestContent = generateManifest(uid = Uuid.random().toString(), description = description)
@@ -82,7 +82,7 @@ object TAKDataPackageGenerator {
         serverHost: String = "127.0.0.1",
         port: Int = DEFAULT_TAK_PORT,
         certPassword: String,
-        description: String = "Meshtastic TAK Server",
+        description: String = "MeshPlay TAK Server",
     ): String {
         val prefs =
             TAKPreferencesXml(
@@ -126,7 +126,7 @@ object TAKDataPackageGenerator {
             )
     }
 
-    internal fun generateManifest(uid: String, description: String = "Meshtastic TAK Server"): String = buildString {
+    internal fun generateManifest(uid: String, description: String = "MeshPlay TAK Server"): String = buildString {
         appendLine("""<MissionPackageManifest version="2">""")
         appendLine("  <Configuration>")
         appendLine("""    <Parameter name="uid" value="${description.xmlEscaped()}.$uid"/>""")

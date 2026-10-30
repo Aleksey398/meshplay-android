@@ -110,7 +110,7 @@ internal class OperationWakeLock(private val context: Context, private val scope
     }
 
     private companion object {
-        private const val WAKE_LOCK_TAG = "Meshtastic::MeshServiceRadioOperation"
+        private const val WAKE_LOCK_TAG = "MeshPlay::MeshServiceRadioOperation"
 
         /** Safety net, not the mechanism that ends the lock: [stop] is what normally releases it. */
         private const val TIMEOUT_MS = 60L * 60L * 1_000L // 1 hour

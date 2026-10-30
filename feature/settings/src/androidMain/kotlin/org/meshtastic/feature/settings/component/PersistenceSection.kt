@@ -97,7 +97,7 @@ internal fun ColumnScope.PersistenceSettingsContent(
             Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "application/csv"
-                putExtra(Intent.EXTRA_TITLE, "Meshtastic_rangetest_${nodeShortName}_$timestamp.csv")
+                putExtra(Intent.EXTRA_TITLE, "MeshPlay_rangetest_${nodeShortName}_$timestamp.csv")
             }
         exportRangeTestLauncher.launch(intent)
     }

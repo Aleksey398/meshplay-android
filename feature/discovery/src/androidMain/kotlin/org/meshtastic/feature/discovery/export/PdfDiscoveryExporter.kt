@@ -55,7 +55,7 @@ class PdfDiscoveryExporter : DiscoveryExporter {
         val document = PdfDocument()
         val renderer = PageRenderer(document)
 
-        renderer.drawTitle("Meshtastic Discovery Report")
+        renderer.drawTitle("MeshPlay Discovery Report")
         renderer.advanceLine()
 
         // Session overview

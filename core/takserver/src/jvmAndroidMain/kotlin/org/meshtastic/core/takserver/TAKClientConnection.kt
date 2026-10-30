@@ -111,7 +111,7 @@ internal class TAKClientConnection(
     }
 
     private fun sendProtocolSupport() {
-        val serverUid = "Meshtastic-TAK-Server-${Random.nextInt().toString(TAK_HEX_RADIX)}"
+        val serverUid = "MeshPlay-TAK-Server-${Random.nextInt().toString(TAK_HEX_RADIX)}"
         val now = Clock.System.now()
         val stale = now + TAK_KEEPALIVE_INTERVAL_MS.milliseconds
         val detail =
@@ -226,7 +226,7 @@ internal class TAKClientConnection(
     }
 
     private fun sendProtocolResponse() {
-        val serverUid = "Meshtastic-TAK-Server-${Random.nextInt().toString(TAK_HEX_RADIX)}"
+        val serverUid = "MeshPlay-TAK-Server-${Random.nextInt().toString(TAK_HEX_RADIX)}"
         val now = Clock.System.now()
         val stale = now + TAK_KEEPALIVE_INTERVAL_MS.milliseconds
         val detail =

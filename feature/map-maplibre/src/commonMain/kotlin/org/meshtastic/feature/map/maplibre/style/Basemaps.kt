@@ -100,7 +100,7 @@ private const val GLYPHS_URL = "https://tiles.openfreemap.org/fonts/{fontstack}/
 private val RasterBaseStyle: BaseStyle =
     BaseStyle.Json {
         put("version", STYLE_SPEC_VERSION)
-        put("name", "Meshtastic raster basemap")
+        put("name", "MeshPlay raster basemap")
         put("glyphs", GLYPHS_URL)
         putJsonObject("sources") {}
         putJsonArray("layers") {}

@@ -44,7 +44,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.core.ui.util.picturesJpegEntry
 import kotlin.coroutines.resume
 
-private const val FILE_TITLE = "Meshtastic mesh view"
+private const val FILE_TITLE = "MeshPlay mesh view"
 private const val OVERLAY_DRAW_TIMEOUT_MS = 1_000L
 
 /**

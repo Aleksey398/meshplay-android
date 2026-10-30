@@ -99,7 +99,7 @@ object RouteDataPackageGenerator {
         val manifest = buildString {
             appendLine("""<MissionPackageManifest version="2">""")
             appendLine("  <Configuration>")
-            appendLine("""    <Parameter name="uid" value="Meshtastic Route.${result.routeUid}"/>""")
+            appendLine("""    <Parameter name="uid" value="MeshPlay Route.${result.routeUid}"/>""")
             appendLine("""    <Parameter name="name" value="${result.routeName.xmlEscaped()}"/>""")
             appendLine("""    <Parameter name="onReceiveDelete" value="true"/>""")
             appendLine("  </Configuration>")
