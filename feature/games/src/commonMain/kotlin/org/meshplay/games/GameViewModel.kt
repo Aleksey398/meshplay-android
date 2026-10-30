@@ -209,7 +209,7 @@ class GameViewModel(
     fun declineDraw() {
         val session = uiState.value?.session ?: return
         viewModelScope.launch {
-            store.upsert(session.copy(drawOfferFromPeer = false, updatedAt = nowMillis()))
+            store.upsert(session.copy(drawOfferFromPeer = false, updatedAt = nowMillis))
         }
     }
 
@@ -253,7 +253,7 @@ class GameViewModel(
             if (applyLocally) {
                 ingestor.ingest(
                     contactKey,
-                    GameSessionIngestor.IngestedText(encoded, fromLocal = true, time = nowMillis()),
+                    GameSessionIngestor.IngestedText(encoded, fromLocal = true, time = nowMillis),
                 )
             }
         }

@@ -33,10 +33,24 @@ jobs:
           cache_read_only: 'false'
 
       - name: Game layer unit tests
-        run: ./gradlew :core:game-protocol:jvmTest :feature:games:jvmTest
+        run: |
+          set +e
+          ./gradlew :core:game-protocol:jvmTest :feature:games:jvmTest --console=plain 2>&1 | tee unit-tests.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "^e: |error:|FAILURE:|What went wrong|Could not |Unresolved reference|> .*FAILED" unit-tests.log | head -60 | sed 's/^/::error::/' || true
+          fi
+          exit "$status"
 
       - name: Assemble fdroid debug APK
-        run: ./gradlew :androidApp:assembleFdroidDebug
+        run: |
+          set +e
+          ./gradlew :androidApp:assembleFdroidDebug --console=plain 2>&1 | tee assemble.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "^e: |error:|FAILURE:|What went wrong|Could not |Unresolved reference|> .*FAILED" assemble.log | head -60 | sed 's/^/::error::/' || true
+          fi
+          exit "$status"
 
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4

@@ -161,7 +161,7 @@ class GamesViewModel(
 
     private fun getNode(userId: String?): Node = nodeRepository.getNode(userId ?: NodeAddress.ID_BROADCAST)
 
-    private fun now(): Long = nowMillis()
+    private fun now(): Long = nowMillis
 
     companion object {
         private const val MAX_SESSION_ID = 99_999
