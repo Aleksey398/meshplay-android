@@ -34,21 +34,55 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import org.meshplay.games.engine.ChessPosition
 import org.meshplay.games.engine.CheckersPosition
 import org.meshplay.protocol.Side
+
+/**
+ * Board palette shared by every game. Fixed values (not theme colors) so the squares stay
+ * high-contrast in light AND dark themes — theme-driven squares went near-black in dark mode
+ * and swallowed the black pieces.
+ */
+internal object BoardPalette {
+    val light = Color(0xFFEEEED2)
+    val dark = Color(0xFF769656)
+    val coordOnLight = Color(0xFF769656)
+    val coordOnDark = Color(0xFFEEEED2)
+
+    val whitePieceFill = Color(0xFFFCFAF4)
+    val whitePieceOutline = Color(0xFF15181E)
+    val blackPieceFill = Color(0xFF14171D)
+    val blackPieceOutline = Color(0xFFF2EBDD)
+
+    val selection = Color(0xFF67EA94) // MeshPlay green
+    val target = Color(0xFF67EA94)
+    val lastMove = Color(0xFFF5D547)
+
+    val tileNavy = Color(0xFF1B2140) // TTT tiles, launcher navy
+    val accentGreen = Color(0xFF67EA94)
+    val ivory = Color(0xFFF5F6FA)
+
+    val checkerWhiteFill = Color(0xFFFAFAF7)
+    val checkerWhiteEdge = Color(0xFF55525F)
+    val checkerBlackFill = Color(0xFF22262F)
+    val checkerBlackEdge = Color(0xFFD8D3C4)
+    val checkerKingRing = Color(0xFFF5C842)
+}
 
 /**
  * Shared tap-to-move interaction for the 8×8 boards: the first tap selects a piece (or extends a
@@ -111,10 +145,13 @@ fun TicTacToeBoard(
 ) {
     Column(
         modifier = modifier.fillMaxWidth().aspectRatio(1f),
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
     ) {
         for (row in 0..2) {
-            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 for (col in 0..2) {
                     val index = row * 3 + col
                     Box(
@@ -123,7 +160,8 @@ fun TicTacToeBoard(
                                 .weight(1f)
                                 .fillMaxWidth()
                                 .aspectRatio(1f)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                .clip(MaterialTheme.shapes.large)
+                                .background(BoardPalette.tileNavy)
                                 .pointerInput(enabled) {
                                     detectTapGestures {
                                         if (enabled && cells[index] == 0) onCell(index + 1)
@@ -136,9 +174,9 @@ fun TicTacToeBoard(
                             style = MaterialTheme.typography.displayMedium,
                             color =
                                 if (cells[index] > 0) {
-                                    MaterialTheme.colorScheme.primary
+                                    BoardPalette.accentGreen
                                 } else {
-                                    MaterialTheme.colorScheme.tertiary
+                                    BoardPalette.ivory
                                 },
                         )
                     }
@@ -158,10 +196,9 @@ fun CheckersBoard(
     modifier: Modifier = Modifier,
 ) {
     val selection = remember { BoardSelection() }
-    val light = MaterialTheme.colorScheme.surfaceContainerHighest
-    val dark = MaterialTheme.colorScheme.surfaceContainerHigh
-    val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-    val target = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.55f)
+    val highlight = BoardPalette.selection.copy(alpha = 0.45f)
+    val target = BoardPalette.target.copy(alpha = 0.65f)
+    val textMeasurer = rememberTextMeasurer()
 
     Canvas(
         modifier =
@@ -180,10 +217,11 @@ fun CheckersBoard(
             val (col, row) = screenCell(sq, orientation)
             val lightSquare = (ChessPosition.fileOf(sq) + ChessPosition.rankOf(sq)) % 2 == 1
             drawRect(
-                color = if (lightSquare) light else dark,
+                color = if (lightSquare) BoardPalette.light else BoardPalette.dark,
                 topLeft = Offset(col * cell, row * cell),
                 size = Size(cell, cell),
             )
+            drawSquareCoord(measurer = textMeasurer, col = col, row = row, cell = cell, sq = sq, lightSquare = lightSquare)
             val square = ChessPosition.squareName(sq)
             if (selection.path.isNotEmpty() && square == selection.path.substring(0, 2)) {
                 drawRect(
@@ -198,18 +236,17 @@ fun CheckersBoard(
                 val cy = row * cell + cell / 2
                 val radius = cell * 0.34f
                 val isWhite = piece > 0
-                val fill = if (isWhite) Color.White else Color(0xFF2B2F3A)
-                val edge = if (isWhite) Color(0xFFB9BEC9) else Color.Black
-                drawCircle(color = fill, radius = radius, center = Offset(cx, cy))
+                val fill = if (isWhite) BoardPalette.checkerWhiteFill else BoardPalette.checkerBlackFill
+                val edge = if (isWhite) BoardPalette.checkerWhiteEdge else BoardPalette.checkerBlackEdge
+                drawCircle(color = edge, radius = radius, center = Offset(cx, cy))
                 drawCircle(
-                    color = edge,
-                    radius = radius,
+                    color = fill,
+                    radius = radius - cell * 0.045f,
                     center = Offset(cx, cy),
-                    style = Stroke(width = cell * 0.05f),
                 )
                 if (kotlin.math.abs(piece) == CheckersPosition.WHITE_KING) {
                     drawCircle(
-                        color = if (isWhite) Color(0xFF2B2F3A) else Color.White,
+                        color = BoardPalette.checkerKingRing,
                         radius = radius * 0.45f,
                         center = Offset(cx, cy),
                         style = Stroke(width = cell * 0.06f),
@@ -231,13 +268,10 @@ fun ChessBoard(
     modifier: Modifier = Modifier,
 ) {
     val selection = remember { BoardSelection() }
-    val light = MaterialTheme.colorScheme.surfaceContainerLowest
-    val dark = MaterialTheme.colorScheme.surfaceContainerHigh
-    val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-    val target = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.55f)
-    val lastMoveColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f)
+    val highlight = BoardPalette.selection.copy(alpha = 0.45f)
+    val target = BoardPalette.target.copy(alpha = 0.65f)
+    val lastMoveColor = BoardPalette.lastMove.copy(alpha = 0.38f)
     val textMeasurer = rememberTextMeasurer()
-    val pieceStyle = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
 
     Canvas(
         modifier =
@@ -252,6 +286,16 @@ fun ChessBoard(
                 },
     ) {
         val cell = size.width / 8
+        // Glyphs scale with the cell so pieces read on any screen; outlined (stroke under fill)
+        // in both directions so black pieces stay visible on the dark squares and vice versa.
+        val pieceStyle = TextStyle(
+            fontSize = (cell * 0.78f).toSp(),
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+        )
+        val outlineWidth = cell * 0.055f
+        val outline = Stroke(width = outlineWidth)
         val lastUci = position.lastMoveUci()
         val lastFrom = lastUci?.substring(0, 2)
         val lastTo = lastUci?.substring(2, 4)
@@ -260,10 +304,11 @@ fun ChessBoard(
             val square = ChessPosition.squareName(sq)
             val lightSquare = (ChessPosition.fileOf(sq) + ChessPosition.rankOf(sq)) % 2 == 1
             drawRect(
-                color = if (lightSquare) light else dark,
+                color = if (lightSquare) BoardPalette.light else BoardPalette.dark,
                 topLeft = Offset(col * cell, row * cell),
                 size = Size(cell, cell),
             )
+            drawSquareCoord(measurer = textMeasurer, col = col, row = row, cell = cell, sq = sq, lightSquare = lightSquare)
             if (square == lastFrom || square == lastTo) {
                 drawRect(
                     color = lastMoveColor,
@@ -287,17 +332,62 @@ fun ChessBoard(
                         col * cell + (cell - layout.size.width) / 2,
                         row * cell + (cell - layout.size.height) / 2,
                     )
-                if (piece > 0) {
-                    // Light pieces get a dark drop shadow so they read on both square colors.
-                    drawText(layout, topLeft = Offset(topLeft.x + 1.5f, topLeft.y + 1.5f), color = Color(0xFF1C1F26))
-                    drawText(layout, topLeft = topLeft, color = Color(0xFFF8F9FB))
-                } else {
-                    drawText(layout, topLeft = topLeft, color = Color(0xFF1C1F26))
-                }
+                val isWhite = piece > 0
+                drawText(
+                    layout,
+                    topLeft = topLeft,
+                    color = if (isWhite) BoardPalette.whitePieceOutline else BoardPalette.blackPieceOutline,
+                    drawStyle = outline,
+                )
+                drawText(
+                    layout,
+                    topLeft = topLeft,
+                    color = if (isWhite) BoardPalette.whitePieceFill else BoardPalette.blackPieceFill,
+                    drawStyle = Fill,
+                )
             }
         }
         drawSelectionMarkers(cell = cell, selection = selection, legalMoves = legalMoves, orientation = orientation, highlight = highlight, target = target)
     }
+}
+
+/** Algebraic file/rank labels in the outer corners of the screen grid, contrasting each square. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSquareCoord(
+    measurer: androidx.compose.ui.text.TextMeasurer,
+    col: Int,
+    row: Int,
+    cell: Float,
+    sq: Int,
+    lightSquare: Boolean,
+) {
+    // Only the outer screen edges carry labels: bottom row = files, left column = ranks,
+    // whichever side is facing down stays on those screen edges.
+    val isBottomRow = row == 7
+    val isLeftCol = col == 0
+    if (!isBottomRow && !isLeftCol) return
+    val label = when {
+        isBottomRow && !isLeftCol -> ChessPosition.squareName(sq).substring(0, 1)
+        isLeftCol && !isBottomRow -> ChessPosition.squareName(sq).substring(1, 2)
+        else -> return
+    }
+    val color = if (lightSquare) BoardPalette.coordOnLight else BoardPalette.coordOnDark
+    val style = TextStyle(
+        fontSize = (cell * 0.2f).toSp(),
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.SansSerif,
+    )
+    val layout = measurer.measure(label, style)
+    val x = if (isBottomRow && !isLeftCol) {
+        col * cell + cell - layout.size.width - cell * 0.06f
+    } else {
+        cell * 0.06f
+    }
+    val y = if (isBottomRow && !isLeftCol) {
+        row * cell + cell - layout.size.height - cell * 0.05f
+    } else {
+        cell * 0.05f
+    }
+    drawText(layout, color, Offset(x, y))
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSelectionMarkers(
@@ -325,7 +415,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSelectionMarker
                 color = highlight,
                 radius = cell * 0.42f,
                 center = Offset(cx, cy),
-                style = Stroke(width = cell * 0.07f),
+                style = Stroke(width = cell * 0.07f, cap = StrokeCap.Round),
             )
         } else {
             drawCircle(color = target, radius = cell * 0.14f, center = Offset(cx, cy))
@@ -352,4 +442,4 @@ private fun pieceGlyph(piece: Int): String =
 
 /** Board cell values for the tic-tac-toe engine's position encoding. */
 fun TicTacToeCells(position: org.meshplay.games.engine.TicTacToePosition): IntArray =
-    IntArray(9) { position.cellAt(it + 1) }
+    IntArray(9) { i -> position.cells[i] }

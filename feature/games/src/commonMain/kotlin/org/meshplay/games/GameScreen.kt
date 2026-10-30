@@ -16,7 +16,9 @@
  */
 package org.meshplay.games
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -37,8 +40,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.border
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.jetbrains.compose.resources.stringResource
@@ -131,11 +142,7 @@ fun GameScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = statusText(ui),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            StatusPill(ui = ui)
             Spacer(modifier = Modifier.height(12.dp))
 
             when {
@@ -144,7 +151,19 @@ fun GameScreen(
                     onDecline = viewModel::declineInvite,
                 )
                 else -> {
-                    BoardForState(ui = ui, onMove = viewModel::onMoveTried)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(20.dp))
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                shape = RoundedCornerShape(20.dp),
+                            ),
+                    ) {
+                        BoardForState(ui = ui, onMove = viewModel::onMoveTried)
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                     if (ui.session.status == SessionStatus.ACTIVE) {
                         ActionRow(ui = ui, viewModel = viewModel)
@@ -184,11 +203,20 @@ fun GameScreen(
                                     acc.append(move)
                                 }
                                 .toString()
-                        Text(
-                            text = rendered,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            Text(
+                                text = rendered,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             }
@@ -215,12 +243,53 @@ fun GameScreen(
 }
 
 @Composable
+private fun StatusPill(ui: GameUiState, modifier: Modifier = Modifier) {
+    val brandGreen = Color(0xFF67EA94)
+    val navy = Color(0xFF12203A)
+    val amber = Color(0xFFF5D547)
+    val isFinished = ui.session.status == SessionStatus.FINISHED
+    val filled = ui.myTurn && !isFinished
+    val container =
+        when {
+            isFinished -> amber
+            filled -> brandGreen
+            else -> Color.Transparent
+        }
+    val contentColor =
+        when {
+            filled || isFinished -> navy
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(container)
+            .then(
+                if (!filled && !ui.isFinished) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = statusText(ui),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = contentColor,
+        )
+    }
+}
+
+@Composable
 private fun InvitationPanel(onAccept: () -> Unit, onDecline: () -> Unit) {
     Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
         TextButton(onClick = onDecline) {
             Text(stringResource(Res.string.games_decline))
         }
-        TextButton(onClick = onAccept) {
+        FilledTonalButton(onClick = onAccept) {
             Text(stringResource(Res.string.games_accept))
         }
     }
@@ -229,12 +298,12 @@ private fun InvitationPanel(onAccept: () -> Unit, onDecline: () -> Unit) {
 @Composable
 private fun ActionRow(ui: GameUiState, viewModel: GameViewModel) {
     Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-        TextButton(onClick = viewModel::offerDraw, enabled = ui.myTurn) {
+        FilledTonalButton(onClick = viewModel::offerDraw, enabled = ui.myTurn) {
             Text(stringResource(Res.string.games_offer_draw))
         }
         Spacer(modifier = Modifier.width(8.dp))
         TextButton(onClick = viewModel::resign) {
-            Text(stringResource(Res.string.games_resign))
+            Text(stringResource(Res.string.games_resign), color = MaterialTheme.colorScheme.error)
         }
     }
 }
