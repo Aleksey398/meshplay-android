@@ -22,9 +22,11 @@ import org.meshplay.protocol.GameResult
 import org.meshplay.protocol.Side
 
 /** Whether this device opened the challenge or received it. */
+@Serializable
 enum class SessionRole { CHALLENGER, RESPONDER }
 
 /** Lifecycle of one game session. */
+@Serializable
 enum class SessionStatus {
     /** Challenge sent; waiting for the peer's acceptance snapshot. */
     PENDING,

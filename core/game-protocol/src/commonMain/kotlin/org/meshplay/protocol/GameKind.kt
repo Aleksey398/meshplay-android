@@ -16,12 +16,15 @@
  */
 package org.meshplay.protocol
 
+import kotlinx.serialization.Serializable
+
 /**
  * The turn-based games MeshPlay can play over a plain text channel.
  *
  * Each kind maps to a short wire tag so game messages stay tiny: the whole payload budget of a
  * mesh text packet is ~200 bytes.
  */
+@Serializable
 enum class GameKind(val wireTag: String, val displayName: String) {
     CHESS("CH", "Chess"),
     CHECKERS("CK", "Checkers"),
@@ -34,6 +37,7 @@ enum class GameKind(val wireTag: String, val displayName: String) {
 }
 
 /** Which side of the board a player commands. Tic-tac-toe ignores it. */
+@Serializable
 enum class Side(val wireChar: Char) {
     WHITE('w'),
     BLACK('b'),
@@ -48,6 +52,7 @@ enum class Side(val wireChar: Char) {
 }
 
 /** A player-initiated request carried inside a game conversation. */
+@Serializable
 enum class GameRequest(val wireChar: Char) {
     RESIGN('X'),
     DRAW_OFFER('D'),
@@ -62,6 +67,7 @@ enum class GameRequest(val wireChar: Char) {
  * The final result of a session. `W`/`B` mean white/black wins for board games; for tic-tac-toe
  * they mean X/O wins. `D` is a draw in every game.
  */
+@Serializable
 enum class GameResult(val wireChar: Char) {
     WHITE_WINS('W'),
     BLACK_WINS('B'),

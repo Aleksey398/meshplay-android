@@ -38,6 +38,7 @@ import org.meshtastic.core.model.NodeAddress
 import org.meshtastic.core.repository.NodeRepository
 import org.meshtastic.core.repository.PacketRepository
 import org.meshtastic.core.repository.usecase.SendMessageUseCase
+import org.meshplay.games.engine.ChessEngine
 import org.meshplay.games.engine.ChessPosition
 import org.meshplay.games.engine.GameEngine
 import org.meshplay.games.session.GameSession
