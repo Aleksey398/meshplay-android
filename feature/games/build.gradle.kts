@@ -37,6 +37,7 @@ kotlin {
             implementation(projects.core.resources)
             implementation(projects.core.ui)
 
+            implementation(libs.androidx.datastore.preferences)
             implementation(libs.kotlinx.serialization.json)
         }
     }

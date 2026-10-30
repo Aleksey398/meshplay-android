@@ -107,7 +107,7 @@ data class ChessPosition(
 
         // Promotion.
         if (move.promotion != null) {
-            val color = if (piece > 0) WHITE else BLACK
+            val color = if (piece > 0) 1 else -1
             next[move.to] = color * when (move.promotion) {
                 'q' -> QUEEN
                 'r' -> ROOK
@@ -119,7 +119,12 @@ data class ChessPosition(
 
         // Castling rights follow the king and the rooks.
         if (abs(piece) == KING) {
-            rights = if (piece == WHITE) rights and (RIGHT_WK or RIGHT_WQ).inv() else rights and (RIGHT_BK or RIGHT_BQ).inv()
+            rights =
+                if (piece == WHITE_KING) {
+                    rights and (RIGHT_WK or RIGHT_WQ).inv()
+                } else {
+                    rights and (RIGHT_BK or RIGHT_BQ).inv()
+                }
         }
         if (piece == WHITE_ROOK || piece == BLACK_ROOK) {
             rights = rights and rookRightBit(move.from).inv()
@@ -439,6 +444,7 @@ data class ChessPosition(
         const val H1 = 7
         const val A8 = 56
         const val B1 = 1
+        const val B8 = 57
         const val C8 = 58
         const val D8 = 59
         const val E8 = 60
