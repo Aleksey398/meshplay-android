@@ -70,6 +70,7 @@ configure<ApplicationExtension> {
             keyPassword = keystoreProperties["keyPassword"] as String?
             storeFile = keystoreProperties["storeFile"]?.let { file(it) }
             storePassword = keystoreProperties["storePassword"] as String?
+            (keystoreProperties["storeType"] as String?)?.let { storeType = it }
         }
     }
     defaultConfig {
