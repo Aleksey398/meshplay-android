@@ -39,7 +39,7 @@ import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.vectorResource
 import org.meshtastic.core.model.Node
 import org.meshtastic.core.resources.Res
-import org.meshtastic.core.resources.ic_meshtastic
+import org.meshtastic.core.resources.ic_meshplay
 import org.meshtastic.core.resources.navigate_back
 import org.meshtastic.core.ui.icon.ArrowBack
 import org.meshtastic.core.ui.icon.MeshtasticIcons
@@ -113,7 +113,7 @@ fun MainAppBar(
             } else {
                 // The Meshtastic logo is never swapped for event branding — the app's identity stays put. Event
                 // firmware is surfaced on the Connections screen instead (EventFirmwareCard).
-                { Icon(imageVector = vectorResource(Res.drawable.ic_meshtastic), contentDescription = null) }
+                { Icon(imageVector = vectorResource(Res.drawable.ic_meshplay), contentDescription = null) }
             },
             actions = {
                 TopBarActions(

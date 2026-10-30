@@ -34,7 +34,7 @@ import org.jetbrains.compose.resources.vectorResource
 import org.meshtastic.core.model.EventFirmwareEdition
 import org.meshtastic.core.model.EventFirmwareLink
 import org.meshtastic.core.resources.Res
-import org.meshtastic.core.resources.ic_meshtastic
+import org.meshtastic.core.resources.ic_meshplay
 import org.meshtastic.core.resources.img_event_defcon
 import org.meshtastic.core.resources.img_event_hamvention
 import kotlin.time.Clock
@@ -104,7 +104,7 @@ fun EventBrandingIcon(
 ) {
     val bundled = eventIconFor(edition.edition)
     val fallback =
-        bundled?.let { painterResource(it) } ?: rememberVectorPainter(vectorResource(Res.drawable.ic_meshtastic))
+        bundled?.let { painterResource(it) } ?: rememberVectorPainter(vectorResource(Res.drawable.ic_meshplay))
     val url = safeBrandUrlOrNull(edition.iconUrl)
     if (url.isNullOrBlank()) {
         Image(

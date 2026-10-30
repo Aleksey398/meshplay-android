@@ -54,10 +54,20 @@ jobs:
           fi
           exit "$status"
 
-      - name: Upload debug APKs
+      - name: Report debug APK
+        run: |
+          {
+            echo "## Debug APK"
+            echo
+            echo "Download the artifact below to get the file(s):"
+            echo
+            ls -lh androidApp/build/outputs/apk/fdroid/debug/*.apk | awk '{print "- `" $9 "` (" $5 ")"}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: meshplay-fdroid-debug
+          name: MeshPlay-debug-APK
           path: androidApp/build/outputs/apk/fdroid/debug/*.apk
           if-no-files-found: error
 
@@ -98,11 +108,17 @@ jobs:
             echo "::warning::KEYSTORE_BASE64 secret is not set; producing unsigned release APKs."
           fi
 
+      - name: Game layer unit tests
+        run: ./gradlew :core:game-protocol:jvmTest :feature:games:jvmTest --console=plain
+
       - name: Assemble fdroid release APK
         run: ./gradlew :androidApp:assembleFdroidRelease
 
+      # Publish the APK as a separate downloadable file on the release; never publish a release
+      # that has no APK attached.
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: androidApp/build/outputs/apk/fdroid/release/*.apk
+          fail_on_unmatched_files: true
           generate_release_notes: true
