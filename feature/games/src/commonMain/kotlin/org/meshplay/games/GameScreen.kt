@@ -63,6 +63,7 @@ import org.meshtastic.core.resources.games_result_white_wins
 import org.meshtastic.core.resources.games_tictactoe
 import org.meshtastic.core.resources.games_title
 import org.meshtastic.core.resources.games_waiting_peer
+import org.meshtastic.core.resources.games_you_are_o
 import org.meshtastic.core.resources.games_your_turn
 import org.meshtastic.core.ui.component.MainAppBar
 import org.meshplay.games.component.ChessBoard

@@ -28,6 +28,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(projects.core.common)
+            implementation(projects.core.di)
             implementation(projects.core.gameProtocol)
             implementation(projects.core.model)
             implementation(projects.core.navigation)

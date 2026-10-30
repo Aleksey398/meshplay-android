@@ -53,6 +53,7 @@ import org.meshtastic.core.resources.games_in_progress
 import org.meshtastic.core.resources.games_invited_status
 import org.meshtastic.core.resources.games_invited_title
 import org.meshtastic.core.resources.games_no_sessions
+import org.meshtastic.core.resources.games_new_challenge
 import org.meshtastic.core.resources.games_play_black
 import org.meshtastic.core.resources.games_play_white
 import org.meshtastic.core.resources.games_result_black_wins
