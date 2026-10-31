@@ -33,6 +33,9 @@ class GameSessionIngestor(private val store: GameSessionStore) {
     /** Folds one chat item; returns the session touched by it (may be unchanged). */
     suspend fun ingest(contactKey: String, item: IngestedText): GameSession? {
         val message: GameMessage = GameMessageCodec.decode(item.text) ?: return null
+        // Dismissed invitations/finished sessions must not be reconstructed by replaying the
+        // retained chat log when its flow emits again (or after the app restarts).
+        if (store.isDismissed(message.sessionId, contactKey)) return null
         val existing = store.get(message.sessionId, contactKey)
         val result =
             GameSessionReducer.reduce(

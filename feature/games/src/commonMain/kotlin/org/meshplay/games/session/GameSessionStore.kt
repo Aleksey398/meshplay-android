@@ -16,6 +16,7 @@
  */
 package org.meshplay.games.session
 
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import co.touchlab.kermit.Logger
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.koin.core.annotation.Single
@@ -46,6 +48,7 @@ class GameSessionStore(private val dataStore: AppDataStore, dispatchers: Corouti
         encodeDefaults = true
     }
     private val serializer = ListSerializer(GameSession.serializer())
+    private val dismissedSerializer = ListSerializer(DismissedSession.serializer())
 
     val sessions: StateFlow<List<GameSession>> =
         dataStore.data
@@ -58,9 +61,18 @@ class GameSessionStore(private val dataStore: AppDataStore, dispatchers: Corouti
     suspend fun get(sessionId: Int, contactKey: String): GameSession? =
         sessions.first().firstOrNull { it.sessionId == sessionId && it.contactKey == contactKey }
 
+    /** True after the player dismissed this session, including across app restarts. */
+    suspend fun isDismissed(sessionId: Int, contactKey: String): Boolean {
+        val key = DismissedSession(sessionId, contactKey)
+        return decodeDismissed(dataStore.data.first()[DISMISSED_KEY]).contains(key)
+    }
+
     /** Inserts or replaces the session with the same id in the same conversation. */
     suspend fun upsert(session: GameSession) {
         dataStore.edit { prefs ->
+            // Keep a dismissal authoritative even if an in-flight replay read this session before
+            // the user removed it. Checking and writing in the same edit makes that race atomic.
+            if (isDismissed(prefs, session.sessionId, session.contactKey)) return@edit
             val current = decode(prefs[KEY]).filterNot {
                 it.sessionId == session.sessionId && it.contactKey == session.contactKey
             }
@@ -69,13 +81,27 @@ class GameSessionStore(private val dataStore: AppDataStore, dispatchers: Corouti
         }
     }
 
+    /**
+     * Removes a session and records a tombstone. The chat history remains in the message database,
+     * so without the tombstone every feed refresh would fold the old invitation/results back in.
+     */
     suspend fun remove(sessionId: Int, contactKey: String) {
+        val dismissed = DismissedSession(sessionId, contactKey)
         dataStore.edit { prefs ->
-            val current = decode(prefs[KEY])
-            val next = current.filterNot { it.sessionId == sessionId && it.contactKey == contactKey }
+            val next =
+                decode(prefs[KEY]).filterNot {
+                    it.sessionId == sessionId && it.contactKey == contactKey
+                }
             prefs[KEY] = json.encodeToString(serializer, next)
+
+            val dismissedSessions = decodeDismissed(prefs[DISMISSED_KEY]).toMutableSet()
+            dismissedSessions.add(dismissed)
+            prefs[DISMISSED_KEY] = json.encodeToString(dismissedSerializer, dismissedSessions.toList())
         }
     }
+
+    private fun isDismissed(prefs: Preferences, sessionId: Int, contactKey: String): Boolean =
+        DismissedSession(sessionId, contactKey) in decodeDismissed(prefs[DISMISSED_KEY])
 
     private fun decode(raw: String?): List<GameSession> =
         if (raw.isNullOrEmpty()) {
@@ -86,7 +112,20 @@ class GameSessionStore(private val dataStore: AppDataStore, dispatchers: Corouti
                 .getOrDefault(emptyList())
         }
 
+    private fun decodeDismissed(raw: String?): List<DismissedSession> =
+        if (raw.isNullOrEmpty()) {
+            emptyList()
+        } else {
+            runCatching { json.decodeFromString(dismissedSerializer, raw) }
+                .onFailure { Logger.w { "Dropping unreadable dismissed game sessions" } }
+                .getOrDefault(emptyList())
+        }
+
     companion object {
         private val KEY = stringPreferencesKey("meshplay_game_sessions_v1")
+        private val DISMISSED_KEY = stringPreferencesKey("meshplay_game_sessions_dismissed_v1")
     }
 }
+
+@Serializable
+private data class DismissedSession(val sessionId: Int, val contactKey: String)

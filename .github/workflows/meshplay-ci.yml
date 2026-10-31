@@ -132,7 +132,10 @@ jobs:
         run: ./gradlew :core:game-protocol:jvmTest :feature:games:jvmTest --console=plain
 
       - name: Assemble fdroid release APK
-        run: ./gradlew :androidApp:assembleFdroidRelease
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          echo "Building app version ${release_version} from tag ${GITHUB_REF_NAME}"
+          VERSION_NAME="$release_version" ./gradlew :androidApp:assembleFdroidRelease
 
       - name: Verify APK signatures
         run: |

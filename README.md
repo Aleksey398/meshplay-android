@@ -1,5 +1,9 @@
 # MeshPlay
 
+<p align="center">
+  <img src="androidApp/src/main/ic_launcher2-playstore.png" width="160" alt="MeshPlay app icon: speech bubble with a tic-tac-toe grid" />
+</p>
+
 **MeshPlay** is an independent, offline-first mesh messenger with built-in turn-based games —
 chess, checkers and tic-tac-toe — played right inside a text conversation over LoRa mesh radios.
 
@@ -24,10 +28,20 @@ chess, checkers and tic-tac-toe — played right inside a text conversation over
 ## Playing a game
 
 1. Open a chat with the contact you want to play.
-2. Menu (⋮) → **Play a game**.
+2. Tap the games button in the chat top bar (or choose **Play a game** from the overflow menu).
 3. Pick chess, checkers or tic-tac-toe (and a side for the board games).
 4. The opponent accepts from their games screen and the table opens; tap a piece, then a target
    square. Draws, resignations and results travel through the same tagged messages.
+
+## Game screens
+
+Representative dark-theme previews of active games:
+
+| Chess | Checkers | Tic-tac-toe |
+|:---:|:---:|:---:|
+| <img src="docs/assets/screenshots/games/chess.png" width="220" alt="Chess game screen showing a board after 1. e4 e5" /> | <img src="docs/assets/screenshots/games/checkers.png" width="220" alt="Checkers game screen with the opening position" /> | <img src="docs/assets/screenshots/games/tic-tac-toe.png" width="220" alt="Tic-tac-toe game screen in progress" /> |
+
+These are representative screen renders of the current game UI and board states.
 
 ## Building
 
@@ -51,7 +65,8 @@ Gradle configuration; on CI the SDK is preinstalled on `ubuntu-latest` runners).
 Every push builds the debug APK and runs the game-layer unit tests
 (`.github/workflows/meshplay-ci.yml`). Pushing a tag `v*` additionally builds `fdroidRelease`,
 optionally signs it (GitHub Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-`KEY_PASSWORD`) and publishes the APKs to a GitHub Release.
+`KEY_PASSWORD`) and publishes the APKs to a GitHub Release. The Android app's displayed version is
+set from the release tag (`v0.1.4` builds as `0.1.4`), rather than the inherited upstream version.
 
 ## Games layer
 

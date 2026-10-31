@@ -1,3 +1,4 @@
+// Modified by MeshPlay on 2026-10-31
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -29,12 +30,19 @@ data class VersionInfo(
     val absMinFwVersion: String,
 )
 
+/** Returns the display version encoded by a release tag such as `refs/tags/v0.1.4`. */
+internal fun versionNameFromTagRef(gitRef: String?): String? =
+    gitRef
+        ?.takeIf { it.startsWith("refs/tags/v") }
+        ?.removePrefix("refs/tags/v")
+        ?.takeIf { it.isNotBlank() }
+
 /**
  * Resolves version information using the following precedence:
  * 1. Gradle properties injected by the IDE or CI (`android.injected.version.code`, etc.)
- * 2. Environment variables (`VERSION_CODE`, `VERSION_NAME`)
- * 3. Git commit count + offset from `config.properties`
- * 4. Fallback defaults
+ * 2. Explicit environment variables (`VERSION_CODE`, `VERSION_NAME`)
+ * 3. The GitHub `v*` tag for the display version and the Git commit count + config offset for the code
+ * 4. `config.properties` and fallback defaults
  */
 fun Project.resolveVersionInfo(): VersionInfo {
     val gitVersionProvider = providers.of(GitVersionValueSource::class.java) {}
@@ -50,6 +58,7 @@ fun Project.resolveVersionInfo(): VersionInfo {
         providers.gradleProperty("android.injected.version.name").orNull
             ?: providers.gradleProperty("appVersionName").orNull
             ?: providers.environmentVariable("VERSION_NAME").orNull
+            ?: versionNameFromTagRef(providers.environmentVariable("GITHUB_REF").orNull)
             ?: configProperties.getProperty("VERSION_NAME_BASE")
             ?: "1.0.0"
 
