@@ -288,4 +288,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Ju</string>
+    <string name="games_title">Lojërat</string>
+    <string name="games_menu_item">Luaj një lojë</string>
+    <string name="games_sessions">Sesionet</string>
+    <string name="games_no_sessions">Ende nuk ka lojëra në këtë bisedë</string>
+    <string name="games_new_challenge">Sfidë e re</string>
+    <string name="games_chess">Shah</string>
+    <string name="games_checkers">Dama</string>
+    <string name="games_tictactoe">Treshe</string>
+    <string name="games_play_white">Luaj me të bardhat</string>
+    <string name="games_play_black">Luaj me të zeuzat</string>
+    <string name="games_play_x">Luaj me ✕</string>
+    <string name="games_accept">Prano</string>
+    <string name="games_decline">Refuzo</string>
+    <string name="games_invited_title">Kundërshtari dëshiron të luajë %1$s</string>
+    <string name="games_waiting_peer">Duke pritur kundërshtarin…</string>
+    <string name="games_invited_status">Ftesë e marrë</string>
+    <string name="games_resign">Dorëzoju</string>
+    <string name="games_offer_draw">Ofro barazim</string>
+    <string name="games_accept_draw">Prano barazimin</string>
+    <string name="games_peer_offered_draw">Kundërshtari ofron barazim</string>
+    <string name="games_result_white_wins">Bardhët fitojnë</string>
+    <string name="games_result_black_wins">Të zezat fitojnë</string>
+    <string name="games_result_draw">Barazim</string>
+    <string name="games_moves_label">Lëvizjet</string>
+    <string name="games_promotion_title">Promovo ushtarin në</string>
+    <string name="games_your_turn">Të takon ty</string>
+    <string name="games_peer_turn">I takon kundërshtarit</string>
+    <string name="games_you_are_white">Luaj me të bardhat</string>
+    <string name="games_you_are_black">Luaj me të zeuzat</string>
+    <string name="games_you_are_x">Luaj me ✕</string>
+    <string name="games_you_are_o">Luaj me ◯</string>
+    <string name="games_forget">Hiq sesionin</string>
+    <string name="games_in_progress">Lojë në zhvillim</string>
+    <string name="fork_about_title">Rreth MeshPlay</string>
+    <string name="fork_sources">Kodi burimor i MeshPlay</string>
 </resources>

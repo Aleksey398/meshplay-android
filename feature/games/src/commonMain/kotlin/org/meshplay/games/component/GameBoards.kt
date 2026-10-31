@@ -73,7 +73,9 @@ internal object BoardPalette {
     val target = Color(0xFF67EA94)
     val lastMove = Color(0xFFF5D547)
 
-    val tileNavy = Color(0xFF1B2140) // TTT tiles, launcher navy
+    // TTT tiles: a lighter indigo than the launcher navy so the field stays readable on the
+    // near-black dark-theme surface (the solid navy tile blended into it).
+    val tileNavy = Color(0xFF465590)
     val accentGreen = Color(0xFF67EA94)
     val ivory = Color(0xFFF5F6FA)
 

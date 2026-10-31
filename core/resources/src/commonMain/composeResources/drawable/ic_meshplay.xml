@@ -20,29 +20,48 @@
     android:height="24dp"
     android:viewportWidth="960"
     android:viewportHeight="960">
-  <!-- Board lines -->
+  <!-- White speech bubble -->
   <path
       android:fillColor="#FFFFFFFF"
-      android:pathData="M352,160h64v640h-64z"/>
+      android:pathData="M190,470a290,290 0 1,0 580,0a290,290 0 1,0 -580,0"/>
   <path
       android:fillColor="#FFFFFFFF"
-      android:pathData="M544,160h64v640h-64z"/>
+      android:pathData="M345,610L325,745L520,630Z"/>
+  <!-- Navy grid -->
   <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M160,352h640v64h-640z"/>
+      android:pathData="M440,350L440,590"
+      android:strokeColor="#FF061550"
+      android:strokeLineCap="round"
+      android:strokeWidth="36"/>
   <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M160,544h640v64h-640z"/>
-  <!-- X in the top-left cell -->
+      android:pathData="M560,350L560,590"
+      android:strokeColor="#FF061550"
+      android:strokeLineCap="round"
+      android:strokeWidth="36"/>
   <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M205,227 L227,205 L307,285 L285,307 Z"/>
+      android:pathData="M350,440L610,440"
+      android:strokeColor="#FF061550"
+      android:strokeLineCap="round"
+      android:strokeWidth="36"/>
   <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M285,205 L307,227 L227,307 L205,285 Z"/>
-  <!-- O in the bottom-right cell -->
+      android:pathData="M350,560L610,560"
+      android:strokeColor="#FF061550"
+      android:strokeLineCap="round"
+      android:strokeWidth="36"/>
+  <!-- Turquoise X -->
   <path
-      android:fillColor="#FFFFFFFF"
-      android:fillType="evenOdd"
-      android:pathData="M632,696a64,64 0 1 0 128,0a64,64 0 1 0 -128,0 M664,696a32,32 0 1 1 64,0a32,32 0 1 1 -64,0"/>
+      android:pathData="M325,325L435,435"
+      android:strokeColor="#FF01DEBF"
+      android:strokeLineCap="round"
+      android:strokeWidth="38"/>
+  <path
+      android:pathData="M435,325L325,435"
+      android:strokeColor="#FF01DEBF"
+      android:strokeLineCap="round"
+      android:strokeWidth="38"/>
+  <!-- Navy O -->
+  <path
+      android:pathData="M562,610a48,48 0 1,0 96,0a48,48 0 1,0 -96,0"
+      android:strokeColor="#FF061550"
+      android:strokeWidth="34"/>
 </vector>

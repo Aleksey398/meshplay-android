@@ -263,4 +263,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">أنت</string>
+    <string name="games_title">ألعاب</string>
+    <string name="games_menu_item">العب لعبة</string>
+    <string name="games_sessions">الجلسات</string>
+    <string name="games_no_sessions">لا توجد ألعاب في هذه المحادثة بعد</string>
+    <string name="games_new_challenge">تحدٍّ جديد</string>
+    <string name="games_chess">شطرنج</string>
+    <string name="games_checkers">داما</string>
+    <string name="games_tictactoe">إكس أو</string>
+    <string name="games_play_white">العب بالأبيض</string>
+    <string name="games_play_black">العب بالأسود</string>
+    <string name="games_play_x">العب بـ ✕</string>
+    <string name="games_accept">قبول</string>
+    <string name="games_decline">رفض</string>
+    <string name="games_invited_title">الخصم يريد لعب %1$s</string>
+    <string name="games_waiting_peer">بانتظار الخصم…</string>
+    <string name="games_invited_status">تم استلام دعوة</string>
+    <string name="games_resign">استسلام</string>
+    <string name="games_offer_draw">عرض التعادل</string>
+    <string name="games_accept_draw">قبول التعادل</string>
+    <string name="games_peer_offered_draw">الخصم يعرض التعادل</string>
+    <string name="games_result_white_wins">يفوز الأبيض</string>
+    <string name="games_result_black_wins">يفوز الأسود</string>
+    <string name="games_result_draw">تعادل</string>
+    <string name="games_moves_label">النقلات</string>
+    <string name="games_promotion_title">ترقية البيدق إلى</string>
+    <string name="games_your_turn">دورك</string>
+    <string name="games_peer_turn">دور الخصم</string>
+    <string name="games_you_are_white">تلعب بالأبيض</string>
+    <string name="games_you_are_black">تلعب بالأسود</string>
+    <string name="games_you_are_x">تلعب بـ ✕</string>
+    <string name="games_you_are_o">تلعب بـ ◯</string>
+    <string name="games_forget">إزالة الجلسة</string>
+    <string name="games_in_progress">اللعبة جارية</string>
+    <string name="fork_about_title">عن MeshPlay</string>
+    <string name="fork_sources">شيفرة MeshPlay المصدرية</string>
 </resources>

@@ -294,4 +294,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Tú</string>
+    <string name="games_title">Cluichí</string>
+    <string name="games_menu_item">Imir cluiche</string>
+    <string name="games_sessions">Seisiúin</string>
+    <string name="games_no_sessions">Níl cluichí sa comhrá seo fós</string>
+    <string name="games_new_challenge">Dúshlán nua</string>
+    <string name="games_chess">Ficheall</string>
+    <string name="games_checkers">Dama</string>
+    <string name="games_tictactoe">Tic-tac-toe</string>
+    <string name="games_play_white">Imir le bán</string>
+    <string name="games_play_black">Imir le dubh</string>
+    <string name="games_play_x">Imir le ✕</string>
+    <string name="games_accept">Glac leis</string>
+    <string name="games_decline">Diúltaigh</string>
+    <string name="games_invited_title">Ba mhaith leis an iomaitheoir %1$s a imirt</string>
+    <string name="games_waiting_peer">Ag fanacht leis an iomaitheoir…</string>
+    <string name="games_invited_status">Fuair tú cuireadh</string>
+    <string name="games_resign">Tarraing siar</string>
+    <string name="games_offer_draw">Mol comhionannas</string>
+    <string name="games_accept_draw">Glac le comhionannas</string>
+    <string name="games_peer_offered_draw">Tá comhionannas á mholadh ag an iomaitheoir</string>
+    <string name="games_result_white_wins">Buaíonn bán</string>
+    <string name="games_result_black_wins">Buaíonn dubh</string>
+    <string name="games_result_draw">Comhionannas</string>
+    <string name="games_moves_label">Geansaí</string>
+    <string name="games_promotion_title">Ardaigh an píonó</string>
+    <string name="games_your_turn">Tá sé do chasadh</string>
+    <string name="games_peer_turn">Tá casadh ag an iomaitheoir</string>
+    <string name="games_you_are_white">Tá tú ag imirt le bán</string>
+    <string name="games_you_are_black">Tá tú ag imirt le dubh</string>
+    <string name="games_you_are_x">Tá tú ag imirt le ✕</string>
+    <string name="games_you_are_o">Tá tú ag imirt le ◯</string>
+    <string name="games_forget">Bain an seisiún</string>
+    <string name="games_in_progress">Tá an cluiche ar siúl</string>
+    <string name="fork_about_title">Maidir le MeshPlay</string>
+    <string name="fork_sources">Cód foinse MeshPlay</string>
 </resources>

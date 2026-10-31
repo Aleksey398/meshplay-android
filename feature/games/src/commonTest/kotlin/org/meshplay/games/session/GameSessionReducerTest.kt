@@ -145,6 +145,41 @@ class GameSessionReducerTest {
     }
 
     @Test
+    fun `finished session ignores replayed and newer snapshots`() {
+        // Regression: the chat log is re-ingested newest-first on every emission, so a snapshot
+        // at the same seq as the resign used to flip the session back to ACTIVE ("in progress").
+        val active = invitedSession().activate()
+        val finished =
+            GameSessionReducer.reduce(
+                active,
+                GameMessage.Request(GameKind.TIC_TAC_TOE, active.sessionId, GameRequest.RESIGN),
+                fromLocal = false,
+                now = 2L,
+            ).session!!
+        assertEquals(SessionStatus.FINISHED, finished.status)
+
+        val equalSeq =
+            GameSessionReducer.reduce(
+                finished,
+                GameMessage.Snapshot(GameKind.TIC_TAC_TOE, finished.sessionId, finished.seq, finished.state),
+                fromLocal = false,
+                now = 3L,
+            )
+        assertFalse(equalSeq.changed)
+        assertNull(equalSeq.session)
+
+        val newerSeq =
+            GameSessionReducer.reduce(
+                finished,
+                GameMessage.Snapshot(GameKind.TIC_TAC_TOE, finished.sessionId, finished.seq + 5, "XXX......"),
+                fromLocal = false,
+                now = 4L,
+            )
+        assertFalse(newerSeq.changed)
+        assertNull(newerSeq.session)
+    }
+
+    @Test
     fun `draw offer is flagged and a peer result settles it`() {
         val active = invitedSession().activate()
         val offered =

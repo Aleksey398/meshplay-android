@@ -234,4 +234,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">אתה</string>
+    <string name="games_title">משחקים</string>
+    <string name="games_menu_item">לשחק במשחק</string>
+    <string name="games_sessions">מושבים</string>
+    <string name="games_no_sessions">עדיין אין משחקים בצ\'אט הזה</string>
+    <string name="games_new_challenge">אתגר חדש</string>
+    <string name="games_chess">שחמט</string>
+    <string name="games_checkers">דמקה</string>
+    <string name="games_tictactoe">איקס עיגול</string>
+    <string name="games_play_white">לשחק בלבן</string>
+    <string name="games_play_black">לשחק בשחור</string>
+    <string name="games_play_x">לשחק ב-✕</string>
+    <string name="games_accept">קבלה</string>
+    <string name="games_decline">דחייה</string>
+    <string name="games_invited_title">היריב רוצה לשחק ב-%1$s</string>
+    <string name="games_waiting_peer">ממתינים ליריב…</string>
+    <string name="games_invited_status">ההזמנה התקבלה</string>
+    <string name="games_resign">כניעה</string>
+    <string name="games_offer_draw">הצעת תיקו</string>
+    <string name="games_accept_draw">קבלת תיקו</string>
+    <string name="games_peer_offered_draw">היריב מציע תיקו</string>
+    <string name="games_result_white_wins">הלבן מנצח</string>
+    <string name="games_result_black_wins">השחור מנצח</string>
+    <string name="games_result_draw">תיקו</string>
+    <string name="games_moves_label">מהלכים</string>
+    <string name="games_promotion_title">קידום רגלי ל</string>
+    <string name="games_your_turn">תורך</string>
+    <string name="games_peer_turn">תור היריב</string>
+    <string name="games_you_are_white">את/ה משחק/ת בלבן</string>
+    <string name="games_you_are_black">את/ה משחק/ת בשחור</string>
+    <string name="games_you_are_x">את/ה משחק/ת ב-✕</string>
+    <string name="games_you_are_o">את/ה משחק/ת ב-◯</string>
+    <string name="games_forget">הסרת מושב</string>
+    <string name="games_in_progress">המשחק מתנהל</string>
+    <string name="fork_about_title">אודות MeshPlay</string>
+    <string name="fork_sources">קוד מקור של MeshPlay</string>
 </resources>

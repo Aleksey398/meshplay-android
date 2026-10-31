@@ -301,4 +301,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Tu</string>
+    <string name="games_title">Žaidimai</string>
+    <string name="games_menu_item">Žaisti žaidimą</string>
+    <string name="games_sessions">Sesijos</string>
+    <string name="games_no_sessions">Šioje pokalbyje dar nėra žaidimų</string>
+    <string name="games_new_challenge">Naujas iššūkis</string>
+    <string name="games_chess">Šachmatai</string>
+    <string name="games_checkers">Damos</string>
+    <string name="games_tictactoe">Kryžiukai-nuliukai</string>
+    <string name="games_play_white">Žaisti baltosiomis</string>
+    <string name="games_play_black">Žaisti juodosiomis</string>
+    <string name="games_play_x">Žaisti ✕</string>
+    <string name="games_accept">Priimti</string>
+    <string name="games_decline">Atmesti</string>
+    <string name="games_invited_title">Varžovas nori žaisti %1$s</string>
+    <string name="games_waiting_peer">Laukiama varžovo…</string>
+    <string name="games_invited_status">Kvietimas gautas</string>
+    <string name="games_resign">Pasiduoti</string>
+    <string name="games_offer_draw">Pasiūlyti lygiąsias</string>
+    <string name="games_accept_draw">Priimti lygiąsias</string>
+    <string name="games_peer_offered_draw">Varžovas siūlo lygiąsias</string>
+    <string name="games_result_white_wins">Laimi baltieji</string>
+    <string name="games_result_black_wins">Laimi juodieji</string>
+    <string name="games_result_draw">Lygiosios</string>
+    <string name="games_moves_label">Ėjimai</string>
+    <string name="games_promotion_title">Pakelti pėstininką į</string>
+    <string name="games_your_turn">Tavo ėjimas</string>
+    <string name="games_peer_turn">Varžovo ėjimas</string>
+    <string name="games_you_are_white">Žaidi baltosiomis</string>
+    <string name="games_you_are_black">Žaidi juodosiomis</string>
+    <string name="games_you_are_x">Žaidi ✕</string>
+    <string name="games_you_are_o">Žaidi ◯</string>
+    <string name="games_forget">Pašalinti sesiją</string>
+    <string name="games_in_progress">Žaidimas vyksta</string>
+    <string name="fork_about_title">Apie MeshPlay</string>
+    <string name="fork_sources">MeshPlay pirminis kodas</string>
 </resources>
