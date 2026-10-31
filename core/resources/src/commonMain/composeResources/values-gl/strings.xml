@@ -250,4 +250,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Ti</string>
+    <string name="games_title">Xogos</string>
+    <string name="games_menu_item">Xogar unha partida</string>
+    <string name="games_sessions">sesións</string>
+    <string name="games_no_sessions">Aínda non hai xogos neste chat</string>
+    <string name="games_new_challenge">Novo desafío</string>
+    <string name="games_chess">Xadrez</string>
+    <string name="games_checkers">Damas</string>
+    <string name="games_tictactoe">Tres en raya</string>
+    <string name="games_play_white">Xogar coas brancas</string>
+    <string name="games_play_black">Xogar coas negras</string>
+    <string name="games_play_x">Xogar con ✕</string>
+    <string name="games_accept">Aceptar</string>
+    <string name="games_decline">Rexeitar</string>
+    <string name="games_invited_title">O adversario quere xogar a %1$s</string>
+    <string name="games_waiting_peer">Agardando o adversario…</string>
+    <string name="games_invited_status">Invitación recibida</string>
+    <string name="games_resign">Rendirse</string>
+    <string name="games_offer_draw">Ofrecer táboas</string>
+    <string name="games_accept_draw">Aceptar táboas</string>
+    <string name="games_peer_offered_draw">O adversario ofrece táboas</string>
+    <string name="games_result_white_wins">Ganan as brancas</string>
+    <string name="games_result_black_wins">Ganan as negras</string>
+    <string name="games_result_draw">Táboas</string>
+    <string name="games_moves_label">Xogadas</string>
+    <string name="games_promotion_title">Promocionar peón a</string>
+    <string name="games_your_turn">Tócathe</string>
+    <string name="games_peer_turn">Tócatelle ao adversario</string>
+    <string name="games_you_are_white">Xogas coas brancas</string>
+    <string name="games_you_are_black">Xogas coas negras</string>
+    <string name="games_you_are_x">Xogas con ✕</string>
+    <string name="games_you_are_o">Xogas con ◯</string>
+    <string name="games_forget">Eliminar sesión</string>
+    <string name="games_in_progress">Partida en curso</string>
+    <string name="fork_about_title">Sobre MeshPlay</string>
+    <string name="fork_sources">Código fonte de MeshPlay</string>
 </resources>

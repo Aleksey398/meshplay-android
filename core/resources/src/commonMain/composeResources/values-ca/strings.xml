@@ -260,4 +260,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Tu</string>
+    <string name="games_title">Jocs</string>
+    <string name="games_menu_item">Jugar una partida</string>
+    <string name="games_sessions">Sessions</string>
+    <string name="games_no_sessions">Encara no hi ha jocs en aquest xat</string>
+    <string name="games_new_challenge">Nou desafiament</string>
+    <string name="games_chess">Escacs</string>
+    <string name="games_checkers">Dames</string>
+    <string name="games_tictactoe">Tres en ratlla</string>
+    <string name="games_play_white">Jugar amb blanques</string>
+    <string name="games_play_black">Jugar amb negres</string>
+    <string name="games_play_x">Jugar amb ✕</string>
+    <string name="games_accept">Acceptar</string>
+    <string name="games_decline">Rebutjar</string>
+    <string name="games_invited_title">L’adversari vol jugar a %1$s</string>
+    <string name="games_waiting_peer">Esperant l’adversari…</string>
+    <string name="games_invited_status">Invitació rebuda</string>
+    <string name="games_resign">Rendir-se</string>
+    <string name="games_offer_draw">Ofereix taules</string>
+    <string name="games_accept_draw">Accepta les taules</string>
+    <string name="games_peer_offered_draw">L’adversari ofereix taules</string>
+    <string name="games_result_white_wins">Guanyen les blanques</string>
+    <string name="games_result_black_wins">Guanyen les negres</string>
+    <string name="games_result_draw">Taules</string>
+    <string name="games_moves_label">Jugades</string>
+    <string name="games_promotion_title">Promocionar peó a</string>
+    <string name="games_your_turn">Et toca</string>
+    <string name="games_peer_turn">Li toca a l’adversari</string>
+    <string name="games_you_are_white">Juges amb blanques</string>
+    <string name="games_you_are_black">Juges amb negres</string>
+    <string name="games_you_are_x">Juges amb ✕</string>
+    <string name="games_you_are_o">Juges amb ◯</string>
+    <string name="games_forget">Elimina la sessió</string>
+    <string name="games_in_progress">Partida en curs</string>
+    <string name="fork_about_title">Quant al MeshPlay</string>
+    <string name="fork_sources">Codi font del MeshPlay</string>
 </resources>

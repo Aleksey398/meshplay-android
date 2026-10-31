@@ -310,4 +310,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Вы</string>
+    <string name="games_title">Гульні</string>
+    <string name="games_menu_item">Згуляць у гульню</string>
+    <string name="games_sessions">Сесіі</string>
+    <string name="games_no_sessions">У гэтым чаты пакуль няма гульняў</string>
+    <string name="games_new_challenge">Новы выклік</string>
+    <string name="games_chess">Шахматы</string>
+    <string name="games_checkers">Шашкі</string>
+    <string name="games_tictactoe">Клішкі-нолікі</string>
+    <string name="games_play_white">Гуляць белымі</string>
+    <string name="games_play_black">Гуляць чорнымі</string>
+    <string name="games_play_x">Гуляць за ✕</string>
+    <string name="games_accept">Прыняць</string>
+    <string name="games_decline">Адхіліць</string>
+    <string name="games_invited_title">Супернік хоча згуляць у %1$s</string>
+    <string name="games_waiting_peer">Чакаем суперніка…</string>
+    <string name="games_invited_status">Запрашэнне атрымана</string>
+    <string name="games_resign">Здацца</string>
+    <string name="games_offer_draw">Прапанаваць нічыю</string>
+    <string name="games_accept_draw">Прыняць нічыю</string>
+    <string name="games_peer_offered_draw">Супернік прапануе нічыю</string>
+    <string name="games_result_white_wins">Перамаглі белыя</string>
+    <string name="games_result_black_wins">Перамаглі чорныя</string>
+    <string name="games_result_draw">Нічыя</string>
+    <string name="games_moves_label">Ходы</string>
+    <string name="games_promotion_title">Ператварыць пешку ў</string>
+    <string name="games_your_turn">Ваш ход</string>
+    <string name="games_peer_turn">Ход суперніка</string>
+    <string name="games_you_are_white">Вы гуляеце белымі</string>
+    <string name="games_you_are_black">Вы гуляеце чорнымі</string>
+    <string name="games_you_are_x">Вы гуляеце за ✕</string>
+    <string name="games_you_are_o">Вы гуляеце за ◯</string>
+    <string name="games_forget">Выдаліць сесію</string>
+    <string name="games_in_progress">Ідзе гульня</string>
+    <string name="fork_about_title">Пра MeshPlay</string>
+    <string name="fork_sources">Зыходны код MeshPlay</string>
 </resources>

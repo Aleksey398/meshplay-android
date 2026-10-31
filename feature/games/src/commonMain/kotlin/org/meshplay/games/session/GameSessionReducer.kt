@@ -77,7 +77,10 @@ object GameSessionReducer {
         now: Long,
     ): ReduceResult {
         if (session == null) return ReduceResult(null, false)
-        if (session.isFinished() && session.seq > message.seq) return ReduceResult(null, false)
+        // Finished games are terminal: a late or replayed snapshot must never resurrect the
+        // session (the chat log is re-ingested newest-first on every emission, so an equal-seq
+        // snapshot would otherwise flip a just-resigned game back to ACTIVE).
+        if (session.isFinished()) return ReduceResult(null, false)
         if (message.seq < session.seq) return ReduceResult(null, false)
         val engine = GameEngine.restore(session.kind, message.state)
         if (engine == null) {

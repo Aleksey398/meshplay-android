@@ -255,4 +255,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Vi</string>
+    <string name="games_title">Igre</string>
+    <string name="games_menu_item">Igraj igru</string>
+    <string name="games_sessions">Sesije</string>
+    <string name="games_no_sessions">U ovom chatu još nema igara</string>
+    <string name="games_new_challenge">Novi izazov</string>
+    <string name="games_chess">Šah</string>
+    <string name="games_checkers">Čovječe ne ljuti se</string>
+    <string name="games_tictactoe">Iks-oks</string>
+    <string name="games_play_white">Igraj bijelim</string>
+    <string name="games_play_black">Igraj crnim</string>
+    <string name="games_play_x">Igraj kao ✕</string>
+    <string name="games_accept">Prihvati</string>
+    <string name="games_decline">Odbij</string>
+    <string name="games_invited_title">Protivnik želi igrati %1$s</string>
+    <string name="games_waiting_peer">Čekamo protivnika…</string>
+    <string name="games_invited_status">Pozivnica primljena</string>
+    <string name="games_resign">Predaj se</string>
+    <string name="games_offer_draw">Ponudi remi</string>
+    <string name="games_accept_draw">Prihvati remi</string>
+    <string name="games_peer_offered_draw">Protivnik nudi remi</string>
+    <string name="games_result_white_wins">Bijeli pobjeđuju</string>
+    <string name="games_result_black_wins">Crni pobjeđuju</string>
+    <string name="games_result_draw">Remi</string>
+    <string name="games_moves_label">Potezi</string>
+    <string name="games_promotion_title">Promoviraj pješaka u</string>
+    <string name="games_your_turn">Ti si na potezu</string>
+    <string name="games_peer_turn">Protivnik je na potezu</string>
+    <string name="games_you_are_white">Igraš bijelim</string>
+    <string name="games_you_are_black">Igraš crnim</string>
+    <string name="games_you_are_x">Igraš kao ✕</string>
+    <string name="games_you_are_o">Igraš kao ◯</string>
+    <string name="games_forget">Ukloni sesiju</string>
+    <string name="games_in_progress">Igra u tijeku</string>
+    <string name="fork_about_title">O MeshPlayu</string>
+    <string name="fork_sources">MeshPlay izvorni kod</string>
 </resources>

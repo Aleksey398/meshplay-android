@@ -300,4 +300,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Deg</string>
+    <string name="games_title">Spill</string>
+    <string name="games_menu_item">Spill et spill</string>
+    <string name="games_sessions">Økter</string>
+    <string name="games_no_sessions">Ingen spill i denne chatten ennå</string>
+    <string name="games_new_challenge">Ny utfordring</string>
+    <string name="games_chess">Sjakk</string>
+    <string name="games_checkers">Damma</string>
+    <string name="games_tictactoe">Tic-tac-toe</string>
+    <string name="games_play_white">Spill med hvit</string>
+    <string name="games_play_black">Spill med svart</string>
+    <string name="games_play_x">Spill som ✕</string>
+    <string name="games_accept">Godta</string>
+    <string name="games_decline">Avslå</string>
+    <string name="games_invited_title">Motstanderen vil spille %1$s</string>
+    <string name="games_waiting_peer">Venter på motstanderen…</string>
+    <string name="games_invited_status">Invitasjon mottatt</string>
+    <string name="games_resign">Gi opp</string>
+    <string name="games_offer_draw">Tilby remis</string>
+    <string name="games_accept_draw">Godta remis</string>
+    <string name="games_peer_offered_draw">Motstanderen tilbyr remis</string>
+    <string name="games_result_white_wins">Hvit vinner</string>
+    <string name="games_result_black_wins">Svart vinner</string>
+    <string name="games_result_draw">Remis</string>
+    <string name="games_moves_label">Trekk</string>
+    <string name="games_promotion_title">Forfremm brikke til</string>
+    <string name="games_your_turn">Du er på trekk</string>
+    <string name="games_peer_turn">Motstander er på trekk</string>
+    <string name="games_you_are_white">Du spiller med hvit</string>
+    <string name="games_you_are_black">Du spiller med svart</string>
+    <string name="games_you_are_x">Du spiller som ✕</string>
+    <string name="games_you_are_o">Du spiller som ◯</string>
+    <string name="games_forget">Fjern økt</string>
+    <string name="games_in_progress">Spill pågår</string>
+    <string name="fork_about_title">Om MeshPlay</string>
+    <string name="fork_sources">MeshPlay kildekode</string>
 </resources>

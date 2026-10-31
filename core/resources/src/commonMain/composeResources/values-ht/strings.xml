@@ -281,4 +281,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Ou</string>
+    <string name="games_title">Jwèt</string>
+    <string name="games_menu_item">Jwe yon jwèt</string>
+    <string name="games_sessions">Sesyon</string>
+    <string name="games_no_sessions">Poko gen jwèt nan chat sa a</string>
+    <string name="games_new_challenge">Nouvo defi</string>
+    <string name="games_chess">Echèk</string>
+    <string name="games_checkers">Damo</string>
+    <string name="games_tictactoe">Kwaze wonn</string>
+    <string name="games_play_white">Jwe ak blan</string>
+    <string name="games_play_black">Jwe ak nwa</string>
+    <string name="games_play_x">Jwe ak ✕</string>
+    <string name="games_accept">Aksepte</string>
+    <string name="games_decline">Refize</string>
+    <string name="games_invited_title">Konpetitè a vle jwe %1$s</string>
+    <string name="games_waiting_peer">N ap tann konpetitè a…</string>
+    <string name="games_invited_status">Nou resevwa yon envitasyon</string>
+    <string name="games_resign">Abandone</string>
+    <string name="games_offer_draw">Pwopoze yon pat</string>
+    <string name="games_accept_draw">Aksepte pat la</string>
+    <string name="games_peer_offered_draw">Konpetitè a pwopoze yon pat</string>
+    <string name="games_result_white_wins">Blan genyen</string>
+    <string name="games_result_black_wins">Nwa genyen</string>
+    <string name="games_result_draw">Pat</string>
+    <string name="games_moves_label">Kou</string>
+    <string name="games_promotion_title">Fè pyon an moute</string>
+    <string name="games_your_turn">Se ou</string>
+    <string name="games_peer_turn">Se konpetitè a</string>
+    <string name="games_you_are_white">Ou jwe ak blan</string>
+    <string name="games_you_are_black">Ou jwe ak nwa</string>
+    <string name="games_you_are_x">Ou jwe ak ✕</string>
+    <string name="games_you_are_o">Ou jwe ak ◯</string>
+    <string name="games_forget">Retire sesyon an</string>
+    <string name="games_in_progress">Jwèt la ap mache</string>
+    <string name="fork_about_title">Sou MeshPlay</string>
+    <string name="fork_sources">Kòd sous MeshPlay</string>
 </resources>

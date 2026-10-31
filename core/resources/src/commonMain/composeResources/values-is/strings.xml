@@ -216,4 +216,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Þú</string>
+    <string name="games_title">Leikir</string>
+    <string name="games_menu_item">Spila leik</string>
+    <string name="games_sessions">Setur</string>
+    <string name="games_no_sessions">Engir leikir í þessu spjalli enn</string>
+    <string name="games_new_challenge">Ný áskorun</string>
+    <string name="games_chess">Skák</string>
+    <string name="games_checkers">Damleikur</string>
+    <string name="games_tictactoe">Kindó</string>
+    <string name="games_play_white">Spila með hvítum</string>
+    <string name="games_play_black">Spila með svörtum</string>
+    <string name="games_play_x">Spila sem ✕</string>
+    <string name="games_accept">Samþykkja</string>
+    <string name="games_decline">Hafna</string>
+    <string name="games_invited_title">Andstæðingur vill spila %1$s</string>
+    <string name="games_waiting_peer">Bíðum eftir andstæðingi…</string>
+    <string name="games_invited_status">Boð móttekið</string>
+    <string name="games_resign">Gefa upp</string>
+    <string name="games_offer_draw">Bjóða jafntefli</string>
+    <string name="games_accept_draw">Samþykkja jafntefli</string>
+    <string name="games_peer_offered_draw">Andstæðingur býður jafntefli</string>
+    <string name="games_result_white_wins">Hvítir vinna</string>
+    <string name="games_result_black_wins">Svartir vinna</string>
+    <string name="games_result_draw">Jafntefli</string>
+    <string name="games_moves_label">Leikir</string>
+    <string name="games_promotion_title">Upphæða peð í</string>
+    <string name="games_your_turn">Þú ert á leik</string>
+    <string name="games_peer_turn">Andstæðingur er á leik</string>
+    <string name="games_you_are_white">Þú spilar með hvítum</string>
+    <string name="games_you_are_black">Þú spilar með svörtum</string>
+    <string name="games_you_are_x">Þú spilar sem ✕</string>
+    <string name="games_you_are_o">Þú spilar sem ◯</string>
+    <string name="games_forget">Fjarlægja setu</string>
+    <string name="games_in_progress">Leikur í gangi</string>
+    <string name="fork_about_title">Um MeshPlay</string>
+    <string name="fork_sources">Frumleiðslukóði MeshPlay</string>
 </resources>

@@ -304,4 +304,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Jaz</string>
+    <string name="games_title">Igre</string>
+    <string name="games_menu_item">Igraj igro</string>
+    <string name="games_sessions">Seje</string>
+    <string name="games_no_sessions">V tem klepetu še ni iger</string>
+    <string name="games_new_challenge">Nov izziv</string>
+    <string name="games_chess">Šah</string>
+    <string name="games_checkers">Dama</string>
+    <string name="games_tictactoe">Iks-oks</string>
+    <string name="games_play_white">Igraj z belimi</string>
+    <string name="games_play_black">Igraj s črnimi</string>
+    <string name="games_play_x">Igraj kot ✕</string>
+    <string name="games_accept">Sprejmi</string>
+    <string name="games_decline">Zavrni</string>
+    <string name="games_invited_title">Nasprotnik želi igrati %1$s</string>
+    <string name="games_waiting_peer">Čakamo na nasprotnika…</string>
+    <string name="games_invited_status">Povabilo prejeto</string>
+    <string name="games_resign">Predaj se</string>
+    <string name="games_offer_draw">Ponudi remi</string>
+    <string name="games_accept_draw">Sprejmi remi</string>
+    <string name="games_peer_offered_draw">Nasprotnik ponuja remi</string>
+    <string name="games_result_white_wins">Zmagajo beli</string>
+    <string name="games_result_black_wins">Zmagajo črni</string>
+    <string name="games_result_draw">Remi</string>
+    <string name="games_moves_label">Poteze</string>
+    <string name="games_promotion_title">Promoviraj kmeta v</string>
+    <string name="games_your_turn">Na potezi si ti</string>
+    <string name="games_peer_turn">Na potezi je nasprotnik</string>
+    <string name="games_you_are_white">Igraš z belimi</string>
+    <string name="games_you_are_black">Igraš s črnimi</string>
+    <string name="games_you_are_x">Igraš kot ✕</string>
+    <string name="games_you_are_o">Igraš kot ◯</string>
+    <string name="games_forget">Odstrani sejo</string>
+    <string name="games_in_progress">Igra v teku</string>
+    <string name="fork_about_title">O MeshPlay</string>
+    <string name="fork_sources">Kodna osnova MeshPlay</string>
 </resources>

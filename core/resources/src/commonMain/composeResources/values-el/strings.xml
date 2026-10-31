@@ -289,4 +289,39 @@
     <!-- WIND -->
     <!-- WRITE -->
     <string name="you">Εσύ</string>
+    <string name="games_title">Παιχνίδια</string>
+    <string name="games_menu_item">Παίξε ένα παιχνίδι</string>
+    <string name="games_sessions">Συνεδρίες</string>
+    <string name="games_no_sessions">Δεν υπάρχουν ακόμη παιχνίδια σε αυτή τη συνομιλία</string>
+    <string name="games_new_challenge">Νέα πρόκληση</string>
+    <string name="games_chess">Σκάκι</string>
+    <string name="games_checkers">Δάμα</string>
+    <string name="games_tictactoe">Τρία σε σειρά</string>
+    <string name="games_play_white">Παίξε με τα λευκά</string>
+    <string name="games_play_black">Παίξε με τα μαύρα</string>
+    <string name="games_play_x">Παίξε με ✕</string>
+    <string name="games_accept">Αποδοχή</string>
+    <string name="games_decline">Απόρριψη</string>
+    <string name="games_invited_title">Ο αντίπαλος θέλει να παίξει %1$s</string>
+    <string name="games_waiting_peer">Αναμονή για τον αντίπαλο…</string>
+    <string name="games_invited_status">Λήφθηκε πρόσκληση</string>
+    <string name="games_resign">Παραίτηση</string>
+    <string name="games_offer_draw">Πρόταση ισοπαλίας</string>
+    <string name="games_accept_draw">Αποδοχή ισοπαλίας</string>
+    <string name="games_peer_offered_draw">Ο αντίπαλος προτείνει ισοπαλία</string>
+    <string name="games_result_white_wins">Νικούν τα λευκά</string>
+    <string name="games_result_black_wins">Νικούν τα μαύρα</string>
+    <string name="games_result_draw">Ισοπαλία</string>
+    <string name="games_moves_label">Κινήσεις</string>
+    <string name="games_promotion_title">Προώθηση πιονιού σε</string>
+    <string name="games_your_turn">Σειρά σου</string>
+    <string name="games_peer_turn">Σειρά του αντιπάλου</string>
+    <string name="games_you_are_white">Παίζεις με τα λευκά</string>
+    <string name="games_you_are_black">Παίζεις με τα μαύρα</string>
+    <string name="games_you_are_x">Παίζεις με ✕</string>
+    <string name="games_you_are_o">Παίζεις με ◯</string>
+    <string name="games_forget">Διαγραφή συνεδρίας</string>
+    <string name="games_in_progress">Το παιχνίδι εξελίσσεται</string>
+    <string name="fork_about_title">Σχετικά με το MeshPlay</string>
+    <string name="fork_sources">Πηγαίος κώδικας MeshPlay</string>
 </resources>

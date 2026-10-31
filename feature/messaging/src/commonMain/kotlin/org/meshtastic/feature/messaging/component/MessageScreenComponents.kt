@@ -432,6 +432,16 @@ fun MessageTopBar(
                 contentDescription = stringResource(Res.string.search_messages),
             )
         }
+        // Visible shortcut into the games hub for direct conversations — the same entry as the
+        // overflow item, promoted out of the menu so it can be found without opening settings.
+        if (channelIndex == null || channelIndex == NodeAddress.PKC_CHANNEL_INDEX) {
+            IconButton(onClick = onNavigateToGames) {
+                Icon(
+                    imageVector = MeshtasticIcons.Games,
+                    contentDescription = stringResource(Res.string.games_menu_item),
+                )
+            }
+        }
         MessageTopBarActions(
             showQuickChat = showQuickChat,
             onToggleQuickChat = onToggleQuickChat,
