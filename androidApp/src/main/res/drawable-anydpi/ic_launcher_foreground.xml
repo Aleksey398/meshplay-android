@@ -5,41 +5,48 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Tic-tac-toe board -->
+    <!-- White speech bubble -->
     <path
-        android:pathData="M39,30L39,78"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineCap="round"
-        android:strokeWidth="6" />
+        android:fillColor="#FDFDFD"
+        android:pathData="M17,51a34,34 0 1,0 68,0a34,34 0 1,0 -68,0" />
     <path
-        android:pathData="M63,30L63,78"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineCap="round"
-        android:strokeWidth="6" />
+        android:fillColor="#FDFDFD"
+        android:pathData="M36,68L34,82L54,73Z" />
+    <!-- Tic-tac-toe grid inside the bubble -->
     <path
-        android:pathData="M30,39L78,39"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#061550"
         android:strokeLineCap="round"
-        android:strokeWidth="6" />
+        android:strokeWidth="3.8"
+        android:pathData="M46.7,34.8L46.7,67.2" />
     <path
-        android:pathData="M30,63L78,63"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#061550"
         android:strokeLineCap="round"
-        android:strokeWidth="6" />
+        android:strokeWidth="3.8"
+        android:pathData="M59.7,34.8L59.7,67.2" />
+    <path
+        android:strokeColor="#061550"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.8"
+        android:pathData="M33.7,47.8L72.6,47.8" />
+    <path
+        android:strokeColor="#061550"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.8"
+        android:pathData="M33.7,60.8L72.6,60.8" />
     <!-- X in the top-left cell -->
     <path
-        android:pathData="M27.5,27.5L38.5,38.5"
-        android:strokeColor="#67EA94"
+        android:strokeColor="#01DEBF"
         android:strokeLineCap="round"
-        android:strokeWidth="5" />
+        android:strokeWidth="3.9"
+        android:pathData="M34.8,35.9L45.6,46.7" />
     <path
-        android:pathData="M27.5,38.5L38.5,27.5"
-        android:strokeColor="#67EA94"
+        android:strokeColor="#01DEBF"
         android:strokeLineCap="round"
-        android:strokeWidth="5" />
+        android:strokeWidth="3.9"
+        android:pathData="M45.6,35.9L34.8,46.7" />
     <!-- O in the bottom-right cell -->
     <path
-        android:pathData="M67.5,73a5.5,5.5 0 1 0 11,0a5.5,5.5 0 1 0 -11,0"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="4" />
+        android:strokeColor="#061550"
+        android:strokeWidth="3.5"
+        android:pathData="M61.2,67.2a4.9,4.9 0 1,0 9.8,0a4.9,4.9 0 1,0 -9.8,0" />
 </vector>
