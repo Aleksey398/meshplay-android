@@ -37,6 +37,9 @@ jobs:
         with:
           cache_read_only: 'false'
 
+      - name: Release version mapping unit test
+        run: ./gradlew :build-logic:convention:test --tests org.meshtastic.buildlogic.VersionInfoTest --console=plain
+
       - name: Game layer unit tests
         run: |
           set +e
