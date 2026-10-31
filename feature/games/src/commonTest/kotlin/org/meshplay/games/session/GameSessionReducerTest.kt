@@ -166,7 +166,7 @@ class GameSessionReducerTest {
                 now = 3L,
             )
         assertFalse(equalSeq.changed)
-        assertEquals(SessionStatus.FINISHED, equalSeq.session!!.status)
+        assertNull(equalSeq.session)
 
         val newerSeq =
             GameSessionReducer.reduce(
@@ -176,7 +176,7 @@ class GameSessionReducerTest {
                 now = 4L,
             )
         assertFalse(newerSeq.changed)
-        assertEquals(SessionStatus.FINISHED, newerSeq.session!!.status)
+        assertNull(newerSeq.session)
     }
 
     @Test
