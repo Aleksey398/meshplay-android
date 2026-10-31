@@ -37,6 +37,9 @@ jobs:
         with:
           cache_read_only: 'false'
 
+      - name: Release version mapping unit test
+        run: ./gradlew :build-logic:convention:test --tests org.meshtastic.buildlogic.VersionInfoTest --console=plain
+
       - name: Game layer unit tests
         run: |
           set +e
@@ -132,7 +135,10 @@ jobs:
         run: ./gradlew :core:game-protocol:jvmTest :feature:games:jvmTest --console=plain
 
       - name: Assemble fdroid release APK
-        run: ./gradlew :androidApp:assembleFdroidRelease
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          echo "Building app version ${release_version} from tag ${GITHUB_REF_NAME}"
+          VERSION_NAME="$release_version" ./gradlew :androidApp:assembleFdroidRelease
 
       - name: Verify APK signatures
         run: |
